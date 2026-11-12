@@ -1,0 +1,27 @@
+import { StyleSheet } from 'react-native';
+
+export default StyleSheet.create({
+  screen: { flex: 1, backgroundColor: '#0F172A', padding: 10, gap: 12 },
+  searchCard: { borderWidth: 1, borderColor: '#3B7197', backgroundColor: '#15314D', borderRadius: 16, padding: 11 },
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  searchInput: { flex: 1, minWidth: 0, minHeight: 46, borderWidth: 1, borderColor: '#3B7197', borderRadius: 9, paddingHorizontal: 11, color: '#F8FAFC', backgroundColor: '#0D1B34', fontSize: 12 },
+  searchButton: { minHeight: 46, borderWidth: 1, borderColor: '#3B7197', backgroundColor: '#183451', borderRadius: 9, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' },
+  clearButton: { minHeight: 46, borderWidth: 1, borderColor: '#3B7197', backgroundColor: '#183451', borderRadius: 9, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center' },
+  buttonText: { fontSize: 12, fontWeight: '800', color: '#F8FAFC' },
+  listCard: { flex: 1, borderWidth: 1, borderColor: '#3B7197', backgroundColor: '#15314D', borderRadius: 16, padding: 10 },
+  listContent: { paddingBottom: 16 },
+  emptyListContent: { flexGrow: 1 },
+  emptyState: { backgroundColor: '#0B172A', borderWidth: 1, borderStyle: 'dashed', borderColor: '#3B7197', borderRadius: 12, minHeight: 72, alignItems: 'center', justifyContent: 'center', padding: 16 },
+  centerState: { flex: 1, minHeight: 160, alignItems: 'center', justifyContent: 'center', gap: 10, padding: 15 },
+  stateTitle: { color: '#F8FAFC', fontWeight: '800', fontSize: 14, textAlign: 'center' },
+  stateText: { color: '#AFC0D8', textAlign: 'center', fontSize: 13, lineHeight: 20 },
+  retryButton: { backgroundColor: '#2563EB', paddingVertical: 10, paddingHorizontal: 22, borderRadius: 8, marginTop: 5 },
+  countText: { color: '#AFC0D8', fontSize: 11, marginBottom: 10 },
+  studentCard: { flexDirection: 'row', gap: 11, padding: 12, marginBottom: 9, backgroundColor: '#0B1C32', borderWidth: 1, borderColor: '#3B7197', borderRadius: 11, alignItems: 'center' },
+  avatar: { width: 46, height: 46, borderRadius: 10, backgroundColor: '#173659', alignItems: 'center', justifyContent: 'center' },
+  studentInfo: { flex: 1, gap: 4 },
+  studentName: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
+  studentMeta: { color: '#B8C7DA', fontSize: 12 },
+  footerLoader: { marginVertical: 15 },
+  pressed: { opacity: 0.7 },
+});
