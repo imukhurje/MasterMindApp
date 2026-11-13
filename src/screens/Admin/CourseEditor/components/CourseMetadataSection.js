@@ -323,15 +323,9 @@ export default function CourseMetadataSection({
         <View
           style={[styles.fieldBlock, isWideLayout && styles.smallFieldWide]}
         >
-          <Text style={styles.label}>Currency</Text>
-
-          <TextInput
-            value={form.currency}
-            onChangeText={value => onChangeField('currency', value)}
-            placeholder="₹"
-            placeholderTextColor={COLORS.MUTED}
-            style={styles.textInput}
-          />
+          <Text style={styles.label}>
+            Currency {form.currency || 'INR'} / ₹
+          </Text>
         </View>
       </View>
 

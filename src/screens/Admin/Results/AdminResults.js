@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import ExamEvaluationModal from './components/ExamEvaluationModal';
+import HomeworkEvaluationModal from './components/HomeworkEvaluationModal';
 
 import { api } from '../../../api/client';
 
@@ -165,6 +166,10 @@ export default function AdminResults() {
 
   const [evaluationModalVisible, setEvaluationModalVisible] = useState(false);
 
+  const [selectedHomework, setSelectedHomework] = useState(null);
+
+  const [homeworkModalVisible, setHomeworkModalVisible] = useState(false);
+
   const loadResults = useCallback(async (mode = 'initial') => {
     try {
       if (mode === 'refresh') {
@@ -206,21 +211,16 @@ export default function AdminResults() {
   const visibleItems = activeTab === 'exams' ? examItems : homeworkItems;
 
   function handleOpen(item) {
-    if (!item?.id) {
+    if (!item?.id) return;
+
+    if (item.kind === 'homework') {
+      setSelectedHomework(item);
+      setHomeworkModalVisible(true);
       return;
     }
 
-    if (item?.kind !== 'exam') {
-      Alert.alert(
-        'Homework',
-        'Homework opening functionality will be connected separately.',
-      );
-
-      return;
-    }
-
+    // Existing Exam Evaluation
     setEvaluationExam(item);
-
     setEvaluationModalVisible(true);
   }
 
@@ -369,86 +369,85 @@ export default function AdminResults() {
           setEvaluationExam(null);
         }}
       />
+      <HomeworkEvaluationModal
+        visible={homeworkModalVisible}
+        homework={selectedHomework}
+        onClose={() => {
+          setHomeworkModalVisible(false);
+          setSelectedHomework(null);
+        }}
+      />
     </SafeAreaView>
   );
 }
 
 function ResultCard({ item, onOpen }) {
   const startText = formatDateTime(item?.starts_at);
-
   const endText = formatDateTime(item?.ends_at);
-
   const windowLabel = getWindowLabel(item);
 
   return (
     <View style={styles.resultCard}>
-      {/* Top */}
+      {/* Title */}
+      <Text style={styles.resultTitle}>{item?.name || 'Untitled'}</Text>
 
-      <View style={styles.cardTopRow}>
-        <View style={styles.cardMainInfo}>
-          <Text style={styles.resultTitle} numberOfLines={2}>
-            {item?.name || 'Untitled'}
-          </Text>
+      {/* Subject and Class */}
+      <View style={styles.tagsContainer}>
+        {item?.course_title ? (
+          <View style={styles.tagBadge}>
+            <Text style={styles.tagText} numberOfLines={1}>
+              {item.course_title}
+            </Text>
+          </View>
+        ) : null}
 
-          <Text style={styles.dateRangeText}>
-            {startText}
-            {'  —  '}
-            {endText}
-          </Text>
-
-          <Text style={styles.windowText}>{windowLabel}</Text>
-        </View>
-
-        <View style={styles.tagsContainer}>
-          {item?.course_title ? (
-            <View style={styles.tagBadge}>
-              <Text style={styles.tagText} numberOfLines={1}>
-                {item.course_title}
-              </Text>
-            </View>
-          ) : null}
-
-          {item?.class_name ? (
-            <View style={styles.tagBadge}>
-              <Text style={styles.tagText} numberOfLines={1}>
-                {item.class_name}
-              </Text>
-            </View>
-          ) : null}
-        </View>
+        {item?.class_name ? (
+          <View style={styles.tagBadge}>
+            <Text style={styles.tagText} numberOfLines={1}>
+              {item.class_name}
+            </Text>
+          </View>
+        ) : null}
       </View>
 
-      {/* Stats */}
+      {/* Date and Time */}
+      <Text style={styles.dateRangeText}>
+        {startText} — {endText}
+      </Text>
 
+      {/* Window Status */}
+      <Text style={styles.windowText}>{windowLabel}</Text>
+
+      {/* Bottom stats and button */}
       <View style={styles.cardBottomRow}>
-        <View style={styles.statBadge}>
-          <Text style={styles.statText}>
-            Students: {item?.students_count ?? 0}
-          </Text>
-        </View>
-
-        <View style={styles.statBadge}>
-          <Text style={styles.statText}>
-            Questions: {item?.questions_count ?? 0}
-          </Text>
-        </View>
-
-        <View style={styles.rightActions}>
-          <View style={styles.typeBadge}>
-            <Text style={styles.typeText}>{getTypeLabel(item)}</Text>
+        <View style={styles.cardStatsGroup}>
+          <View style={styles.statBadge}>
+            <Text style={styles.statText}>
+              Students: {item?.students_count ?? 0}
+            </Text>
           </View>
 
-          <Pressable
-            onPress={() => onOpen?.(item)}
-            style={({ pressed }) => [
-              styles.openButton,
-
-              pressed && styles.buttonPressed,
-            ]}
-          >
-            <Text style={styles.openButtonText}>Open</Text>
-          </Pressable>
+          <View style={styles.statBadge}>
+            <Text style={styles.statText}>
+              Questions: {item?.questions_count ?? 0}
+            </Text>
+          </View>
         </View>
+
+        <Pressable
+          onPress={() => onOpen?.(item)}
+          accessibilityRole="button"
+          style={({ pressed }) => [
+            styles.openButton,
+            pressed && styles.buttonPressed,
+          ]}
+        >
+          <Text style={styles.openButtonText}>Open</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.cardTypeRow}>
+        <Text style={styles.cardTypeText}>{getTypeLabel(item)}</Text>
       </View>
     </View>
   );

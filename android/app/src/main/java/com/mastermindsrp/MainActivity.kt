@@ -1,4 +1,4 @@
-package com.mastermind
+package com.mastermindsrp
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate

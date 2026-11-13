@@ -1164,6 +1164,8 @@ export default StyleSheet.create({
   detailsAndSelectionRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
   },
 
   detailsLeft: {
@@ -1172,24 +1174,213 @@ export default StyleSheet.create({
   },
 
   studentCheckSideButton: {
-    width: 34,
-    height: 34,
-
+    width: 36,
+    height: 36,
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    borderRadius: 9,
+    backgroundColor: '#142B49',
     alignItems: 'center',
     justifyContent: 'center',
-
-    borderWidth: 1,
-    borderColor: '#4E92C7',
-
-    borderRadius: 8,
-
-    backgroundColor: '#102844',
-
-    marginLeft: 10,
   },
 
   studentCheckSideButtonSelected: {
-    backgroundColor: '#173B60',
     borderColor: '#60A5FA',
+    backgroundColor: 'rgba(37, 99, 235, 0.22)',
+  },
+  selectionOnlyRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+
+  subjectCombinationSection: {
+    marginTop: 10,
+    gap: 7,
+  },
+
+  subjectCombinationLabel: {
+    color: '#AFC0D8',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+
+  subjectCombinationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  subjectCombinationValue: {
+    flexShrink: 1,
+    maxWidth: '100%',
+    minHeight: 38,
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    borderRadius: 20,
+    backgroundColor: '#142B49',
+    paddingLeft: 12,
+    paddingRight: 8,
+  },
+
+  subjectCombinationText: {
+    color: '#E2E8F0',
+    fontSize: 11,
+  },
+
+  subjectCombinationEditButton: {
+    width: 40,
+    height: 38,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
+    backgroundColor: '#2563EB',
+  },
+
+  subjectCombinationEditText: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '800',
+  },
+
+  combinationModalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    padding: 16,
+  },
+
+  combinationModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+  },
+
+  combinationModalCard: {
+    width: '100%',
+    maxHeight: '80%',
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    borderRadius: 14,
+    backgroundColor: '#0B1C32',
+    padding: 15,
+  },
+
+  combinationModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+
+  combinationModalTitle: {
+    flex: 1,
+    color: '#F8FAFC',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+
+  combinationCloseButton: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 9,
+    backgroundColor: '#DC3545',
+  },
+
+  combinationCloseText: {
+    color: '#FFFFFF',
+    fontSize: 19,
+    fontWeight: '800',
+  },
+
+  combinationClassText: {
+    color: '#AFC0D8',
+    fontSize: 12,
+    marginTop: 10,
+  },
+
+  combinationFieldLabel: {
+    color: '#E2E8F0',
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 20,
+    marginBottom: 8,
+  },
+
+  combinationOptionsList: {
+    flexGrow: 0,
+    maxHeight: 250,
+  },
+
+  combinationOption: {
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 9,
+    backgroundColor: '#142B49',
+    paddingHorizontal: 11,
+    paddingVertical: 10,
+    marginBottom: 7,
+    gap: 10,
+  },
+
+  combinationOptionSelected: {
+    borderColor: '#7DD3FC',
+    backgroundColor: 'rgba(37,99,235,0.25)',
+  },
+
+  combinationOptionText: {
+    flex: 1,
+    color: '#F8FAFC',
+    fontSize: 12,
+  },
+
+  combinationRadio: {
+    color: '#7DD3FC',
+    fontSize: 20,
+  },
+
+  combinationEmptyText: {
+    color: '#94A3B8',
+    fontSize: 11,
+    paddingVertical: 15,
+  },
+
+  combinationModalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 9,
+    marginTop: 16,
+  },
+
+  combinationCancelButton: {
+    minHeight: 42,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    borderRadius: 9,
+    backgroundColor: '#142B49',
+  },
+
+  combinationSaveButton: {
+    minWidth: 75,
+    minHeight: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 9,
+    backgroundColor: '#2563EB',
+  },
+
+  combinationButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
   },
 });

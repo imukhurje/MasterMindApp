@@ -3,6 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import Config from 'react-native-config';
 import Login from './src/screens/Login/Login';
 import Dashboard from './src/screens/Dashboard';
 import Students from './src/screens/Students';
@@ -27,6 +28,7 @@ import Marksheet from './src/screens/Result/Marksheet';
 import Routine from './src/screens/Routines/Routine';
 // import OrgSelect from './src/screens/OrgSelect';
 import Billing from './src/screens/Billing/BillingDashboard';
+import BillingOld from './src/screens/Billing/BillingDashboardOld';
 import StaffAttendance from './src/screens/Attendance/StaffAttendanceDashboard';
 import ClassRoom from './src/screens/Classroom/ClassRoom';
 import AttendanceReports from './src/screens/Attendance/AttendanceReports';
@@ -97,7 +99,17 @@ import AdminClassroomDetails from './src/screens/Admin/Classroom/AdminClassroomD
 import AdminClassroomCreate from './src/screens/Admin/Classroom/AdminClassroomCreate';
 import AdminOnlineCoursesStudent from './src/screens/Admin/OnlineStudents/AdminOnlineCoursesStudent';
 import AdminOnlineCoursesPurchases from './src/screens/Admin/OnlinePurchases/AdminOnlineCoursesPurchases';
+import TeacherFinancialAccountingStaffAttendance from './src/screens/Teacher/TeacherFinancialAccountingStaffAttendance';
+import TeacherFinancialAccoutingLeaveRegister from './src/screens/Teacher/TeacherFinancialAccoutingLeaveRegister';
+import AdminCreateExaminationWizard from './src/screens/Admin/Examinations/AdminCreateExaminationWizard';
+import AdminTutorialEvaluation from './src/screens/Admin/Examinations/AdminTutorialEvaluation';
+import AdminReorderOnlineCourses from './src/screens/Admin/CourseEditor/AdminReorderOnlineCourses';
 const Stack = createNativeStackNavigator();
+
+const IS_SET_PAYMENT_SYSTEM =
+  String(Config.IS_SET_PAYMENT_SYSTEM || '')
+    .trim()
+    .toLowerCase() === 'true';
 
 export default function App() {
   return (
@@ -269,7 +281,7 @@ export default function App() {
             />
             <Stack.Screen
               name="BillingDashboard"
-              component={Billing}
+              component={IS_SET_PAYMENT_SYSTEM ? Billing : BillingOld}
               options={{
                 title: 'My Bills',
               }}
@@ -309,7 +321,7 @@ export default function App() {
               name="AdminNotifications"
               component={AdminNotifications}
               options={{
-                title: 'Admin Notifications',
+                title: 'Send Notification',
               }}
             />
             <Stack.Screen
@@ -696,6 +708,39 @@ export default function App() {
               component={AdminOnlineCoursesPurchases}
               options={{
                 title: 'Online Purchases',
+              }}
+            />
+            <Stack.Screen
+              name="TeacherFinancialAccountingStaffAttendance"
+              component={TeacherFinancialAccountingStaffAttendance}
+              options={{
+                title: 'My Attendance',
+              }}
+            />
+            <Stack.Screen
+              name="TeacherFinancialAccoutingLeaveRegister"
+              component={TeacherFinancialAccoutingLeaveRegister}
+              options={{
+                title: 'My Leave',
+              }}
+            />
+            <Stack.Screen
+              name="AdminCreateExaminationWizard"
+              component={AdminCreateExaminationWizard}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen
+              name="AdminTutorialEvaluation"
+              component={AdminTutorialEvaluation}
+              options={{
+                title: 'Tutorial Marks Entry',
+              }}
+            />
+            <Stack.Screen
+              name="AdminReorderOnlineCourses"
+              component={AdminReorderOnlineCourses}
+              options={{
+                title: 'Reorder Online Courses',
               }}
             />
           </Stack.Navigator>

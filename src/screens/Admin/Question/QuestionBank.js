@@ -59,6 +59,10 @@ export default function QuestionBank() {
     { label: 'All Online Courses', value: '' },
   ]);
 
+  const [selectedQuestionIds, setSelectedQuestionIds] = useState([]);
+
+  const [deletingSelected, setDeletingSelected] = useState(false);
+
   const PER_PAGE = 20;
 
   useEffect(() => {
@@ -163,6 +167,7 @@ export default function QuestionBank() {
 
       if (pageNumber === 1) {
         setQuestions(list);
+        setSelectedQuestionIds([]);
       } else {
         setQuestions(prev => [...prev, ...list]);
       }
@@ -289,6 +294,10 @@ export default function QuestionBank() {
               });
 
               setQuestions(prev => prev.filter(q => q.id !== item.id));
+
+              setSelectedQuestionIds(prev =>
+                prev.filter(id => id !== Number(item.id)),
+              );
             } catch (e) {
               Alert.alert(
                 'Delete Failed',
@@ -300,6 +309,81 @@ export default function QuestionBank() {
       ],
     );
   }
+
+  const deleteSelectedQuestions = () => {
+    if (deletingSelected || selectedQuestionIds.length === 0) {
+      return;
+    }
+
+    const questionIds = [
+      ...new Set(
+        selectedQuestionIds
+          .map(Number)
+          .filter(id => Number.isInteger(id) && id > 0),
+      ),
+    ];
+
+    if (questionIds.length === 0) {
+      return;
+    }
+
+    Alert.alert(
+      'Delete Selected Questions',
+      `Are you sure you want to delete ${questionIds.length} selected question(s)? This action cannot be undone.`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingSelected(true);
+
+            try {
+              const response = await api('/api/questions/bulk-delete', {
+                method: 'POST',
+                body: JSON.stringify({
+                  question_ids: questionIds,
+                }),
+              });
+
+              if (response?.ok !== true) {
+                throw new Error('Could not delete selected questions.');
+              }
+
+              // Clear selection after successful delete.
+              setSelectedQuestionIds([]);
+
+              // Reload first page, total count and pagination.
+              await loadQuestions(1, true);
+
+              Alert.alert(
+                'Delete Successful',
+                `${
+                  response.deleted_count ?? questionIds.length
+                } question(s) deleted successfully.`,
+              );
+            } catch (error) {
+              console.log('[BULK DELETE ERROR]', {
+                status: error?.status,
+                message: error?.message,
+                payload: error?.payload,
+              });
+
+              Alert.alert(
+                'Delete Failed',
+                error?.message || 'Unable to delete selected questions.',
+              );
+            } finally {
+              setDeletingSelected(false);
+            }
+          },
+        },
+      ],
+    );
+  };
 
   function getOptions(item) {
     if (Array.isArray(item?.choices)) return item.choices;
@@ -387,6 +471,30 @@ export default function QuestionBank() {
     );
   }
 
+  const toggleQuestionSelection = questionId => {
+    const id = Number(questionId);
+
+    setSelectedQuestionIds(previous =>
+      previous.includes(id)
+        ? previous.filter(item => item !== id)
+        : [...previous, id],
+    );
+  };
+
+  const selectAllQuestions = () => {
+    setSelectedQuestionIds(
+      questions
+        .map(item => Number(item.id))
+        .filter(id => Number.isInteger(id) && id > 0),
+    );
+  };
+
+  const deselectAllQuestions = () => {
+    setSelectedQuestionIds([]);
+  };
+
+  const selectedCount = selectedQuestionIds.length;
+
   function renderQuestion({ item }) {
     const options = getOptions(item);
 
@@ -415,10 +523,36 @@ export default function QuestionBank() {
 
     return (
       <View style={styles.questionCard}>
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>
-            {formatType(item?.type || item?.question_type)}
-          </Text>
+        <View style={styles.questionTopRow}>
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>
+              {formatType(item?.type || item?.question_type)}
+            </Text>
+          </View>
+          <Pressable
+            onPress={() => toggleQuestionSelection(item.id)}
+            hitSlop={10}
+            accessibilityRole="checkbox"
+            accessibilityLabel={`Select question ${item.id}`}
+            accessibilityState={{
+              checked: selectedQuestionIds.includes(Number(item.id)),
+            }}
+            style={styles.questionCheckboxButton}
+          >
+            <MaterialCommunityIcons
+              name={
+                selectedQuestionIds.includes(Number(item.id))
+                  ? 'checkbox-marked'
+                  : 'checkbox-blank-outline'
+              }
+              size={25}
+              color={
+                selectedQuestionIds.includes(Number(item.id))
+                  ? '#60A5FA'
+                  : '#94A3B8'
+              }
+            />
+          </Pressable>
         </View>
 
         <Text style={styles.questionTitle}>
@@ -428,6 +562,15 @@ export default function QuestionBank() {
             'Untitled Question'}
         </Text>
 
+        {/* Long Form Model Answer */}
+        {(item?.type === 'long_form' || item?.question_type === 'long_form') &&
+          String(item?.model_answer || '').trim().length > 0 && (
+            <Text style={styles.modelAnswer}>
+              {String(item.model_answer).trim()}
+            </Text>
+          )}
+
+        {/* MCQ Options */}
         {options.map((option, index) => {
           const correct = isCorrectOption(item, option, index);
 
@@ -517,6 +660,73 @@ export default function QuestionBank() {
             <Text style={styles.primaryButtonText}>+ Add Question</Text>
           </Pressable>
         </ScrollView>
+
+        {/* Bulk Question Actions */}
+        <View style={styles.bulkActionsContainer}>
+          <View style={styles.bulkActionsRow}>
+            <Pressable
+              disabled={questions.length === 0 || deletingSelected}
+              onPress={selectAllQuestions}
+              style={[
+                styles.selectAllButton,
+                (questions.length === 0 || deletingSelected) &&
+                  styles.bulkButtonDisabled,
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="checkbox-multiple-marked-outline"
+                size={16}
+                color="#FFFFFF"
+              />
+              <Text style={styles.bulkButtonText}>Select All</Text>
+            </Pressable>
+
+            <Pressable
+              disabled={selectedCount === 0 || deletingSelected}
+              onPress={deselectAllQuestions}
+              style={[
+                styles.deselectAllButton,
+                (selectedCount === 0 || deletingSelected) &&
+                  styles.bulkButtonDisabled,
+              ]}
+            >
+              <MaterialCommunityIcons
+                name="checkbox-multiple-blank-outline"
+                size={16}
+                color="#FFFFFF"
+              />
+              <Text style={styles.bulkButtonText}>Deselect All</Text>
+            </Pressable>
+
+            <Pressable
+              disabled={selectedCount === 0 || deletingSelected}
+              onPress={deleteSelectedQuestions}
+              style={[
+                styles.deleteSelectedButton,
+                (selectedCount === 0 || deletingSelected) &&
+                  styles.bulkButtonDisabled,
+              ]}
+            >
+              {deletingSelected ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <MaterialCommunityIcons
+                  name="delete-outline"
+                  size={16}
+                  color="#FFFFFF"
+                />
+              )}
+
+              <Text style={styles.bulkButtonText}>
+                {deletingSelected ? 'Deleting...' : 'Delete Selected'}
+              </Text>
+            </Pressable>
+          </View>
+
+          <Text style={styles.selectedCountText}>
+            {selectedCount} of {questions.length} loaded questions selected
+          </Text>
+        </View>
 
         <TextInput
           value={search}

@@ -101,12 +101,148 @@ function getClassLabel(slot) {
   return className;
 }
 
-function RoutineSlotCard({ slot }) {
+function getTutorialSlotClasses(slot) {
+  const targets = Array.isArray(slot?.targets) ? slot.targets : [];
+
+  if (targets.length > 0) {
+    return [
+      ...new Set(
+        targets
+          .map(target => {
+            const name = String(target?.class_name || '').trim();
+            const section = String(target?.class_section || '').trim();
+
+            if (!name) return '';
+
+            return section ? `${name} (${section})` : name;
+          })
+          .filter(Boolean),
+      ),
+    ].join(', ');
+  }
+
+  return getClassLabel(slot) || 'Not assigned';
+}
+
+function getTutorialSlotSubjects(slot) {
+  const targets = Array.isArray(slot?.targets) ? slot.targets : [];
+
+  const subjects = [
+    ...new Set(
+      targets
+        .map(target => String(target?.subject_name || '').trim())
+        .filter(Boolean),
+    ),
+  ];
+
+  return subjects.length > 0
+    ? subjects.join(', ')
+    : slot?.subject_name || 'Subject not assigned';
+}
+
+function getStudentTutorialTargets(slot, studentProfile) {
+  const targets = Array.isArray(slot?.targets) ? slot.targets : [];
+
+  const studentGroupId = normalizePositiveId(studentProfile?.class_group_id);
+
+  const studentClass = String(studentProfile?.class_name || '')
+    .trim()
+    .toLowerCase();
+
+  const studentSection = String(studentProfile?.section || '')
+    .trim()
+    .toLowerCase();
+
+  const matchesClass = target => {
+    const targetGroupId = normalizePositiveId(target?.class_group_id);
+
+    if (studentGroupId !== null && targetGroupId !== null) {
+      return studentGroupId === targetGroupId;
+    }
+
+    return (
+      String(target?.class_name || '')
+        .trim()
+        .toLowerCase() === studentClass &&
+      String(target?.class_section || '')
+        .trim()
+        .toLowerCase() === studentSection
+    );
+  };
+
+  if (targets.length > 0) {
+    return targets.filter(matchesClass);
+  }
+
+  // Fallback for an older single-class response.
+  const fallback = {
+    class_group_id: slot?.class_group_id,
+    class_name: slot?.class_name,
+    class_section: slot?.class_section,
+    subject_name: slot?.subject_name,
+  };
+
+  return matchesClass(fallback) ? [fallback] : [];
+}
+
+function parseSlotTime(value) {
+  if (!value) return null;
+
+  const parts = String(value).split(':').map(Number);
+  const [hours, minutes] = parts;
+
+  if (
+    !Number.isInteger(hours) ||
+    hours < 0 ||
+    hours > 23 ||
+    !Number.isInteger(minutes) ||
+    minutes < 0 ||
+    minutes > 59
+  ) {
+    return null;
+  }
+
+  const date = new Date();
+  date.setHours(hours, minutes, 0, 0);
+
+  return date;
+}
+
+function RoutineSlotCard({
+  slot,
+  showAllTargets = false,
+  studentProfile = null,
+}) {
   const start = normalizeTime(slot?.start_time);
 
   const end = normalizeTime(slot?.end_time);
 
-  const classLabel = getClassLabel(slot);
+  const classLabel = studentProfile
+    ? getTutorialSlotClasses({
+        ...slot,
+        targets: studentTargets,
+      })
+    : showAllTargets
+    ? getTutorialSlotClasses(slot)
+    : getClassLabel(slot);
+
+  const studentTargets = studentProfile
+    ? getStudentTutorialTargets(slot, studentProfile)
+    : [];
+
+  const subjectLabel = studentProfile
+    ? [
+        ...new Set(
+          studentTargets
+            .map(target => String(target?.subject_name || '').trim())
+            .filter(Boolean),
+        ),
+      ].join(', ') ||
+      slot?.subject_name ||
+      ''
+    : showAllTargets
+    ? getTutorialSlotSubjects(slot)
+    : slot?.subject_name || '';
 
   return (
     <View style={styles.slotCard}>
@@ -119,10 +255,10 @@ function RoutineSlotCard({ slot }) {
           <Text style={styles.timeText}>{end}</Text>
         </View>
 
-        {!!slot?.subject_name && (
-          <View style={styles.subjectBadge}>
-            <Text style={styles.subjectBadgeText} numberOfLines={1}>
-              {slot.subject_name}
+        {!!subjectLabel && (
+          <View style={[styles.subjectBadge, { maxWidth: '58%' }]}>
+            <Text style={styles.subjectBadgeText} numberOfLines={2}>
+              {subjectLabel}
             </Text>
           </View>
         )}
@@ -143,7 +279,17 @@ function RoutineSlotCard({ slot }) {
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Class</Text>
 
-            <Text style={styles.detailValue} numberOfLines={1}>
+            <Text
+              style={[
+                styles.detailValue,
+                showAllTargets && {
+                  flex: 1,
+                  flexWrap: 'wrap',
+                  lineHeight: 17,
+                },
+              ]}
+              numberOfLines={showAllTargets ? undefined : 1}
+            >
               {classLabel}
             </Text>
           </View>
@@ -156,6 +302,77 @@ function RoutineSlotCard({ slot }) {
             {slot?.room_name || 'Not assigned'}
           </Text>
         </View>
+      </View>
+    </View>
+  );
+}
+
+function TutorialAdminSlotCard({
+  slot,
+  quota,
+  canEdit,
+  onEdit,
+  onDelete,
+  editLoading = false,
+  actionsDisabled = false,
+}) {
+  const start = normalizeTime(slot?.start_time);
+  const end = normalizeTime(slot?.end_time);
+
+  const subjectText = getTutorialSlotSubjects(slot);
+  const classText = getTutorialSlotClasses(slot);
+
+  const quotaText =
+    quota && quota.quota != null
+      ? ` (${quota.allocated ?? 0}/${quota.quota})`
+      : '';
+
+  return (
+    <View style={styles.tutorialAdminSlotCard}>
+      <View style={styles.tutorialAdminSlotTop}>
+        <View style={styles.tutorialAdminSlotInfo}>
+          <Text style={styles.tutorialAdminSlotTitle}>
+            {start}–{end} · {subjectText}
+          </Text>
+
+          <Text style={styles.tutorialAdminSlotMeta}>
+            {slot?.teacher_name || 'Teacher not assigned'}
+            {quotaText}
+          </Text>
+
+          <Text style={styles.tutorialAdminSlotClasses}>{classText}</Text>
+        </View>
+
+        {canEdit && (
+          <View style={styles.tutorialAdminSlotActions}>
+            <Pressable
+              onPress={() => onEdit?.(slot)}
+              disabled={actionsDisabled}
+              accessibilityRole="button"
+              accessibilityLabel="Edit routine slot"
+              style={[
+                styles.tutorialAdminIconButton,
+                actionsDisabled && !editLoading && styles.controlDisabled,
+              ]}
+            >
+              {editLoading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={styles.tutorialAdminIconText}>✏️</Text>
+              )}
+            </Pressable>
+
+            <Pressable
+              onPress={() => onDelete?.(slot)}
+              disabled={actionsDisabled}
+              accessibilityRole="button"
+              accessibilityLabel="Delete routine slot"
+              style={styles.tutorialAdminIconButton}
+            >
+              <Text style={styles.tutorialAdminIconText}>🗑️</Text>
+            </Pressable>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -176,6 +393,10 @@ export default function Routine() {
 
   const [slots, setSlots] = useState([]);
 
+  const [teacherQuotaAllocations, setTeacherQuotaAllocations] = useState(null);
+
+  const [teacherCampusSettings, setTeacherCampusSettings] = useState(null);
+
   const [schoolRoutineTarget, setSchoolRoutineTarget] = useState(null);
 
   const [schoolMatrix, setSchoolMatrix] = useState(null);
@@ -187,6 +408,12 @@ export default function Routine() {
   const [teacherSchoolRoutines, setTeacherSchoolRoutines] = useState([]);
 
   const [addSlotModalVisible, setAddSlotModalVisible] = useState(false);
+
+  const [editingSlot, setEditingSlot] = useState(null);
+
+  const [deletingSlotId, setDeletingSlotId] = useState(null);
+
+  const isEditingSlot = editingSlot !== null;
 
   const [slotOptionsLoading, setSlotOptionsLoading] = useState(false);
 
@@ -212,6 +439,8 @@ export default function Routine() {
 
   const [slotRoomId, setSlotRoomId] = useState(null);
 
+  const [editingSlotLoadingId, setEditingSlotLoadingId] = useState(null);
+
   const currentRole = String(
     me?.primary_role ||
       me?.role ||
@@ -232,6 +461,14 @@ export default function Routine() {
     currentRole === 'super_admin' ||
     caps?.admin === true;
 
+  const isTutorialAdmin =
+    routineMode.trim().toLowerCase() === 'tutorial' && isAdmin;
+
+  const canEditTutorialSlots =
+    isTutorialAdmin &&
+    caps?.can_manage === true &&
+    teacherCampusSettings?.can_edit === true;
+
   const hasRoutineAccess =
     caps?.student === true ||
     caps?.teacher === true ||
@@ -248,13 +485,21 @@ export default function Routine() {
       /*
        * These APIs are required for all supported roles.
        */
-      const [meResponse, capsResponse, settingsResponse] = await Promise.all([
+
+      const [meResponse, capsResponse] = await Promise.all([
         api('/api/me'),
-
         api('/api/routines/v1/caps'),
-
-        api('/api/settings/v1?keys=routine_mode'),
       ]);
+
+      console.log('[ROUTINE] User role:', meResponse?.role);
+
+      console.log('[ROUTINE] Capabilities:', {
+        student: capsResponse?.student,
+        teacher: capsResponse?.teacher,
+        admin: capsResponse?.admin,
+        canManage: capsResponse?.can_manage,
+        routineMode: capsResponse?.routine_mode,
+      });
 
       setMe(meResponse || null);
 
@@ -293,17 +538,13 @@ export default function Routine() {
       /*
        * Read the real routine mode for every role.
        */
-      const settingsItems = Array.isArray(settingsResponse?.items)
-        ? settingsResponse.items
-        : [];
 
-      const modeSetting = settingsItems.find(
-        item => item?.key === 'routine_mode',
-      );
-
-      const mode = String(modeSetting?.value || '').trim();
+      // Routine mode is already returned by the capabilities API.
+      const mode = String(capsResponse?.routine_mode || '').trim();
 
       setRoutineMode(mode);
+
+      console.log('[ROUTINE] Selected mode:', mode);
 
       const hasAccess =
         capsResponse?.student === true ||
@@ -326,6 +567,7 @@ export default function Routine() {
       /*
        * Tutorial mode.
        */
+
       if (mode.toLowerCase() === 'tutorial') {
         setTeacherSchoolRoutines([]);
         setSchoolRoutineTarget(null);
@@ -333,9 +575,28 @@ export default function Routine() {
         setSchoolDayTemplates([]);
         setSchoolRoutineDetails(null);
 
-        const slotsResponse = await api('/api/routines/v1/tutorial-slots');
+        setTeacherQuotaAllocations(null);
+        setTeacherCampusSettings(null);
 
-        setSlots(Array.isArray(slotsResponse) ? slotsResponse : []);
+        if (adminAccess) {
+          const [slotsResponse, quotaResponse, campusSettingsResponse] =
+            await Promise.all([
+              api('/api/routines/v1/tutorial-slots'),
+
+              api('/api/routines/v1/teacher-quota-allocations'),
+
+              api('/api/routines/v1/teacher-campus-settings'),
+            ]);
+
+          setSlots(Array.isArray(slotsResponse) ? slotsResponse : []);
+
+          setTeacherQuotaAllocations(quotaResponse || null);
+          setTeacherCampusSettings(campusSettingsResponse || null);
+        } else {
+          const slotsResponse = await api('/api/routines/v1/tutorial-slots');
+
+          setSlots(Array.isArray(slotsResponse) ? slotsResponse : []);
+        }
 
         return;
       }
@@ -593,6 +854,8 @@ export default function Routine() {
 
       setSlotOptions(response || null);
 
+      setEditingSlot(null);
+
       /*
        * Reset the form.
        */
@@ -642,25 +905,9 @@ export default function Routine() {
      * Student sees only their own class/section.
      */
     if (isStudent) {
-      const studentClass = String(me?.student_profile?.class_name || '')
-        .trim()
-        .toLowerCase();
-
-      const studentSection = String(me?.student_profile?.section || '')
-        .trim()
-        .toLowerCase();
-
-      return slots.filter(slot => {
-        const slotClass = String(slot?.class_name || '')
-          .trim()
-          .toLowerCase();
-
-        const slotSection = String(slot?.class_section || '')
-          .trim()
-          .toLowerCase();
-
-        return slotClass === studentClass && slotSection === studentSection;
-      });
+      return slots.filter(
+        slot => getStudentTutorialTargets(slot, me?.student_profile).length > 0,
+      );
     }
 
     /*
@@ -803,6 +1050,8 @@ export default function Routine() {
 
     setAddSlotModalVisible(false);
 
+    setEditingSlot(null);
+
     setSlotStartTime(null);
     setSlotEndTime(null);
     setSlotDayOfWeek(null);
@@ -923,6 +1172,304 @@ export default function Routine() {
     slotRoomId,
     loadRoutine,
   ]);
+
+  const handleUpdateTutorialSlot = async () => {
+    if (!canEditTutorialSlots || !editingSlot?.id || savingSlot) {
+      return;
+    }
+
+    const startTime = slotStartTime;
+    const endTime = slotEndTime;
+
+    if (!(startTime instanceof Date) || Number.isNaN(startTime.getTime())) {
+      Alert.alert('Validation', 'Please select start time.');
+      return;
+    }
+
+    if (!(endTime instanceof Date) || Number.isNaN(endTime.getTime())) {
+      Alert.alert('Validation', 'Please select end time.');
+      return;
+    }
+
+    const toTimeString = date => {
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+
+      return `${hours}:${minutes}`;
+    };
+
+    const start = toTimeString(startTime);
+    const end = toTimeString(endTime);
+
+    if (end <= start) {
+      Alert.alert('Validation', 'End time must be later than start time.');
+      return;
+    }
+
+    const day = Number(slotDayOfWeek);
+
+    if (!Number.isInteger(day) || day < 1 || day > 7) {
+      Alert.alert('Validation', 'Please select a weekday.');
+      return;
+    }
+
+    const classGroupIds = [
+      ...new Set(
+        slotClassIds.map(Number).filter(id => Number.isInteger(id) && id > 0),
+      ),
+    ];
+
+    const courseIds = [
+      ...new Set(
+        slotCourseIds.map(Number).filter(id => Number.isInteger(id) && id > 0),
+      ),
+    ];
+
+    if (classGroupIds.length === 0) {
+      Alert.alert('Validation', 'Please select at least one class.');
+      return;
+    }
+
+    if (courseIds.length === 0) {
+      Alert.alert('Validation', 'Please select at least one subject.');
+      return;
+    }
+
+    const teacherId = Number(slotTeacherId);
+
+    if (!Number.isInteger(teacherId) || teacherId <= 0) {
+      Alert.alert('Validation', 'Please select a teacher.');
+      return;
+    }
+
+    const roomId =
+      slotRoomId == null || slotRoomId === '' ? null : Number(slotRoomId);
+
+    if (roomId !== null && (!Number.isInteger(roomId) || roomId <= 0)) {
+      Alert.alert('Validation', 'Please select a valid room.');
+      return;
+    }
+
+    const payload = {
+      start_time: start,
+      end_time: end,
+      day_of_week: day,
+      class_group_ids: classGroupIds,
+      course_ids: courseIds,
+      teacher_id: teacherId,
+      physical_room_id: roomId,
+    };
+
+    try {
+      setSavingSlot(true);
+
+      const response = await api(
+        `/api/routines/v1/tutorial-slots/${editingSlot.id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        },
+      );
+
+      if (response?.ok !== true) {
+        throw new Error('Unable to update tutorial slot.');
+      }
+
+      // Close and clear Edit state only after success.
+      setAddSlotModalVisible(false);
+      setEditingSlot(null);
+
+      // Refresh routine cards and teacher quota.
+      await loadRoutine({ showLoader: false });
+
+      Alert.alert('Success', 'Tutorial slot updated successfully.');
+    } catch (error) {
+      console.log('[UPDATE TUTORIAL SLOT ERROR]', {
+        status: error?.status,
+        message: error?.message,
+        payload: error?.payload,
+      });
+
+      Alert.alert(
+        'Update Failed',
+        error?.message || 'Could not update tutorial slot.',
+      );
+    } finally {
+      setSavingSlot(false);
+    }
+  };
+
+  const tutorialTeacherQuotaMap = useMemo(() => {
+    const map = new Map();
+
+    const teachers = Array.isArray(teacherQuotaAllocations?.teachers)
+      ? teacherQuotaAllocations.teachers
+      : [];
+
+    teachers.forEach(teacher => {
+      map.set(Number(teacher.teacher_id), {
+        allocated: teacher.allocated,
+        quota: teacher.quota,
+      });
+    });
+
+    return map;
+  }, [teacherQuotaAllocations]);
+
+  const handleEditTutorialSlot = async slot => {
+    if (
+      !canEditTutorialSlots ||
+      !slot?.id ||
+      editingSlotLoadingId !== null ||
+      slotOptionsLoading
+    ) {
+      return;
+    }
+
+    try {
+      setEditingSlotLoadingId(slot.id);
+      setSlotOptionsLoading(true);
+
+      const response = await api('/api/routines/v1/tutorial-slots/options');
+
+      const availableClasses = Array.isArray(response?.classes)
+        ? response.classes
+        : [];
+
+      const availableCourses = Array.isArray(response?.courses)
+        ? response.courses
+        : [];
+
+      const availableTeachers = Array.isArray(response?.teachers)
+        ? response.teachers
+        : [];
+
+      const classIds = [
+        ...new Set(
+          (Array.isArray(slot.class_group_ids) &&
+          slot.class_group_ids.length > 0
+            ? slot.class_group_ids
+            : (slot.targets || []).map(target => target.class_group_id)
+          )
+            .map(Number)
+            .filter(id => Number.isInteger(id) && id > 0),
+        ),
+      ].filter(id => availableClasses.some(item => Number(item.id) === id));
+
+      const courseIds = [
+        ...new Set(
+          (Array.isArray(slot.course_ids) && slot.course_ids.length > 0
+            ? slot.course_ids
+            : (slot.targets || []).map(target => target.course_id)
+          )
+            .map(Number)
+            .filter(id => Number.isInteger(id) && id > 0),
+        ),
+      ].filter(id => availableCourses.some(item => Number(item.id) === id));
+
+      const teacherId = Number(slot.teacher_id);
+
+      if (
+        !availableTeachers.some(teacher => Number(teacher.id) === teacherId)
+      ) {
+        throw new Error('Assigned teacher is not available.');
+      }
+
+      setSlotOptions(response);
+      setEditingSlot(slot);
+
+      setSlotStartTime(parseSlotTime(slot.start_time));
+      setSlotEndTime(parseSlotTime(slot.end_time));
+      setSlotDayOfWeek(Number(slot.day_of_week));
+
+      setSlotClassIds(classIds);
+      setSlotCourseIds(courseIds);
+      setSlotTeacherId(teacherId);
+
+      setSlotRoomId(
+        slot.physical_room_id == null ? null : Number(slot.physical_room_id),
+      );
+
+      setShowStartTimePicker(false);
+      setShowEndTimePicker(false);
+
+      setAddSlotModalVisible(true);
+    } catch (error) {
+      console.log('[EDIT TUTORIAL SLOT ERROR]', {
+        status: error?.status,
+        message: error?.message,
+      });
+
+      Alert.alert(
+        'Edit Slot',
+        error?.message || 'Unable to load slot details.',
+      );
+    } finally {
+      setEditingSlotLoadingId(null);
+      setSlotOptionsLoading(false);
+    }
+  };
+
+  const handleDeleteTutorialSlot = useCallback(
+    slot => {
+      if (!canEditTutorialSlots || !slot?.id || deletingSlotId !== null) {
+        return;
+      }
+
+      const startTime = normalizeTime(slot.start_time);
+      const endTime = normalizeTime(slot.end_time);
+
+      Alert.alert(
+        'Delete Tutorial Slot',
+        `Delete the ${startTime}–${endTime} tutorial slot?`,
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                setDeletingSlotId(slot.id);
+
+                const response = await api(
+                  `/api/routines/v1/tutorial-slots/${slot.id}`,
+                  {
+                    method: 'DELETE',
+                  },
+                );
+
+                if (response?.ok !== true) {
+                  throw new Error('Could not delete the tutorial slot.');
+                }
+
+                await loadRoutine({
+                  showLoader: false,
+                });
+
+                Alert.alert('Success', 'Tutorial slot deleted successfully.');
+              } catch (error) {
+                console.log('[DELETE TUTORIAL SLOT ERROR]', error);
+
+                Alert.alert(
+                  'Delete Slot',
+                  error?.message || 'Could not delete the tutorial slot.',
+                );
+              } finally {
+                setDeletingSlotId(null);
+              }
+            },
+          },
+        ],
+      );
+    },
+    [canEditTutorialSlots, deletingSlotId, loadRoutine],
+  );
 
   const groupedDays = useMemo(() => {
     const map = {};
@@ -1600,7 +2147,13 @@ export default function Routine() {
               </View>
 
               {groupedDays.map(group => (
-                <View key={group.day} style={styles.dayCard}>
+                <View
+                  key={group.day}
+                  style={[
+                    styles.dayCard,
+                    isTutorialAdmin && styles.tutorialAdminDayCard,
+                  ]}
+                >
                   <View style={styles.dayHeader}>
                     <View style={styles.dayIcon}>
                       <Text style={styles.dayIconText}>
@@ -1618,10 +2171,43 @@ export default function Routine() {
                     </View>
                   </View>
 
-                  <View style={styles.daySlots}>
-                    {group.items.map(slot => (
-                      <RoutineSlotCard key={String(slot.id)} slot={slot} />
-                    ))}
+                  <View
+                    style={[
+                      styles.daySlots,
+                      isTutorialAdmin && styles.tutorialAdminDaySlots,
+                    ]}
+                  >
+                    {group.items.map(slot =>
+                      isTutorialAdmin ? (
+                        <TutorialAdminSlotCard
+                          key={`tutorial-admin-slot-${slot.id}`}
+                          slot={slot}
+                          quota={tutorialTeacherQuotaMap.get(
+                            Number(slot.teacher_id),
+                          )}
+                          canEdit={canEditTutorialSlots}
+                          editLoading={
+                            Number(editingSlotLoadingId) === Number(slot.id) &&
+                            editingSlotLoadingId !== null
+                          }
+                          actionsDisabled={
+                            editingSlotLoadingId !== null ||
+                            deletingSlotId !== null
+                          }
+                          onEdit={handleEditTutorialSlot}
+                          onDelete={handleDeleteTutorialSlot}
+                        />
+                      ) : (
+                        <RoutineSlotCard
+                          key={`tutorial-slot-${slot.id}`}
+                          slot={slot}
+                          showAllTargets={isTutorial && isTeacher}
+                          studentProfile={
+                            isTutorial && isStudent ? me?.student_profile : null
+                          }
+                        />
+                      ),
+                    )}
                   </View>
                 </View>
               ))}
@@ -1649,7 +2235,9 @@ export default function Routine() {
         <View style={styles.addSlotBackdrop}>
           <View style={styles.addSlotModal}>
             <View style={styles.addSlotHeader}>
-              <Text style={styles.addSlotModalTitle}>Add Slot</Text>
+              <Text style={styles.addSlotModalTitle}>
+                {isEditingSlot ? 'Edit Slot' : 'Add Slot'}
+              </Text>
 
               <Pressable
                 disabled={savingSlot}
@@ -1791,14 +2379,35 @@ export default function Routine() {
                 }}
               />
 
-              {slotClassIds.length > 0 ? (
-                <Text style={styles.addSlotSelectionHint}>
-                  {slotClassIds.length}{' '}
-                  {slotClassIds.length === 1
-                    ? 'class selected'
-                    : 'classes selected'}
-                </Text>
-              ) : null}
+              {slotClassIds.length > 0 && (
+                <View style={styles.slotSelectedChips}>
+                  {slotClassIds.map(classId => {
+                    const item = classOptions.find(
+                      option => Number(option.value) === Number(classId),
+                    );
+
+                    return (
+                      <Pressable
+                        key={`class-chip-${classId}`}
+                        onPress={() => {
+                          setSlotClassIds(current =>
+                            current.filter(
+                              id => Number(id) !== Number(classId),
+                            ),
+                          );
+                        }}
+                        style={styles.slotSelectedChip}
+                      >
+                        <Text style={styles.slotSelectedChipText}>
+                          {item?.label || `Class ${classId}`}
+                        </Text>
+
+                        <Text style={styles.slotSelectedChipRemove}>×</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
 
               <Text style={styles.addSlotLabel}>Subjects (one or more)</Text>
 
@@ -1823,14 +2432,35 @@ export default function Routine() {
                 }}
               />
 
-              {slotCourseIds.length > 0 ? (
-                <Text style={styles.addSlotSelectionHint}>
-                  {slotCourseIds.length}{' '}
-                  {slotCourseIds.length === 1
-                    ? 'subject selected'
-                    : 'subjects selected'}
-                </Text>
-              ) : null}
+              {slotCourseIds.length > 0 && (
+                <View style={styles.slotSelectedChips}>
+                  {slotCourseIds.map(courseId => {
+                    const item = courseOptions.find(
+                      option => Number(option.value) === Number(courseId),
+                    );
+
+                    return (
+                      <Pressable
+                        key={`subject-chip-${courseId}`}
+                        onPress={() => {
+                          setSlotCourseIds(current =>
+                            current.filter(
+                              id => Number(id) !== Number(courseId),
+                            ),
+                          );
+                        }}
+                        style={styles.slotSelectedChip}
+                      >
+                        <Text style={styles.slotSelectedChipText}>
+                          {item?.label || `Subject ${courseId}`}
+                        </Text>
+
+                        <Text style={styles.slotSelectedChipRemove}>×</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
 
               <Text style={styles.addSlotLabel}>Teacher</Text>
 
@@ -1882,7 +2512,9 @@ export default function Routine() {
 
                 <Pressable
                   disabled={savingSlot}
-                  onPress={handleSaveSlot}
+                  onPress={
+                    isEditingSlot ? handleUpdateTutorialSlot : handleSaveSlot
+                  }
                   style={({ pressed }) => [
                     styles.addSlotSaveButton,
 
@@ -1894,7 +2526,9 @@ export default function Routine() {
                   {savingSlot ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
-                    <Text style={styles.addSlotSaveText}>Save</Text>
+                    <Text style={styles.addSlotSaveText}>
+                      {isEditingSlot ? 'Save Changes' : 'Save'}
+                    </Text>
                   )}
                 </Pressable>
               </View>

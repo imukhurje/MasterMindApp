@@ -473,4 +473,183 @@ export default StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
   },
+
+  createActionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
+    paddingVertical: 4,
+  },
+
+  topCreateButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 10,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+
+  topCreateButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  tutorialButton: {
+    flex: 1,
+    minHeight: 46,
+    borderRadius: 10,
+    backgroundColor: '#142B49',
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+
+  tutorialButtonText: {
+    color: '#7DD3FC',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  createModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(2,6,23,0.82)',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+
+  createModalCard: {
+    width: '100%',
+    backgroundColor: '#0B1C32',
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    borderRadius: 15,
+    padding: 16,
+    gap: 10,
+  },
+
+  createModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 5,
+  },
+
+  createModalTitle: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+
+  createModalClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 9,
+    backgroundColor: '#142B49',
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  createModalCloseText: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '700',
+  },
+
+  createModalLabel: {
+    color: '#CBD5E1',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 5,
+  },
+
+  createStatusRow: {
+    flexDirection: 'row',
+    gap: 9,
+  },
+
+  createStatusOption: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    backgroundColor: '#142B49',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  createStatusSelected: {
+    backgroundColor: '#2563EB',
+    borderColor: '#60A5FA',
+  },
+
+  createStatusText: {
+    color: '#AFC0D8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  createStatusTextSelected: {
+    color: '#FFFFFF',
+  },
+
+  createModalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 9,
+    marginTop: 14,
+  },
+
+  createCancelButton: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    borderRadius: 9,
+    backgroundColor: '#142B49',
+    paddingHorizontal: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  createCancelText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  draftWarningBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: '#302E2A',
+    borderWidth: 1,
+    borderColor: '#A16207',
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+    borderRadius: 11,
+    paddingHorizontal: 12,
+    paddingVertical: 13,
+    marginBottom: 12,
+  },
+
+  draftWarningText: {
+    flex: 1,
+    color: '#E2E8F0',
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 19,
+  },
+  statusDraftText: {
+    color: '#F59E0B',
+    fontSize: 10,
+    fontWeight: '800',
+  },
 });

@@ -31,10 +31,9 @@ const styles = StyleSheet.create({
   },
 
   logo: {
-    width: 100,
-    height: 100,
-    marginBottom: 16,
-    borderRadius: 14,
+    width: 260,
+    height: 130,
+    marginBottom: 12,
     alignSelf: 'center',
   },
 

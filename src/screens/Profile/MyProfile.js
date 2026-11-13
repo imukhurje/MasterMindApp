@@ -817,17 +817,12 @@ export default function MyProfile({ navigation }) {
       if (isAdminUser) {
         payload = {
           name: trimmedName,
-
           last_name: lastName.trim() || null,
-
+          whatsapp: whatsapp.trim() || null,
           address_line1: addressLine1.trim() || null,
-
           address_line2: addressLine2.trim() || null,
-
           city: city.trim() || null,
-
           state: stateProvince.trim() || null,
-
           postal_code: postalCode.trim() || null,
         };
       } else if (isTeacher) {
@@ -1063,6 +1058,14 @@ export default function MyProfile({ navigation }) {
             value={lastName}
             onChangeText={setLastName}
             placeholder="Last name"
+          />
+
+          <Field
+            label="WhatsApp number (optional)"
+            value={whatsapp}
+            onChangeText={setWhatsapp}
+            placeholder="Enter WhatsApp number"
+            keyboardType="phone-pad"
           />
 
           <Field

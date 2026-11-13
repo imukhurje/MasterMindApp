@@ -222,12 +222,22 @@ function getDayAssignments(papers, dateKey) {
     .sort((a, b) => a.startTime.localeCompare(b.startTime));
 }
 
-export default function AdminExaminationSchedule({ route, navigation }) {
+export default function AdminExaminationSchedule({
+  route,
+  navigation,
+  embedded = false,
+  examinationId: propExaminationId,
+  examinationName: propExaminationName,
+  onScheduleChange,
+}) {
   const insets = useSafeAreaInsets();
 
-  const examinationId = Number(route?.params?.examinationId);
+  const examinationId = Number(
+    propExaminationId ?? route?.params?.examinationId,
+  );
 
-  const examinationName = route?.params?.examinationName || 'Examination';
+  const examinationName =
+    propExaminationName ?? route?.params?.examinationName ?? 'Examination';
 
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date();
@@ -303,15 +313,20 @@ export default function AdminExaminationSchedule({ route, navigation }) {
   const busyDateSet = useMemo(() => getBusyDateSet(papers), [papers]);
 
   const loadWeekendDays = useCallback(async () => {
-    const response = await api('/api/settings/v1?keys=weekend_days');
+    try {
+      const response = await api('/api/settings/v1?keys=weekend_days');
 
-    const items = Array.isArray(response?.items) ? response.items : [];
+      const items = Array.isArray(response?.items) ? response.items : [];
 
-    const weekendItem = items.find(item => item?.key === 'weekend_days');
+      const weekendItem = items.find(item => item?.key === 'weekend_days');
 
-    const values = Array.isArray(weekendItem?.value) ? weekendItem.value : [];
+      const values = Array.isArray(weekendItem?.value) ? weekendItem.value : [];
 
-    setWeekendDays(values.map(Number).filter(value => Number.isFinite(value)));
+      setWeekendDays(values.map(Number).filter(Number.isFinite));
+    } catch (error) {
+      // Optional API: no Alert, including HTTP 403.
+      setWeekendDays([]);
+    }
   }, []);
 
   const loadHolidays = useCallback(
@@ -356,11 +371,12 @@ export default function AdminExaminationSchedule({ route, navigation }) {
       setLoading(true);
 
       const from = getMonthStart(currentMonth);
-
       const to = getMonthEnd(currentMonth);
 
-      const [settingsResponse, holidaysResponse, examinationResponse] =
-        await Promise.all([
+      // Weekend settings is OPTIONAL.
+      // A 403 must not stop the scheduling page.
+      const [settingsResult, holidaysResult, examinationResult] =
+        await Promise.allSettled([
           api('/api/settings/v1?keys=weekend_days'),
 
           api(
@@ -372,31 +388,71 @@ export default function AdminExaminationSchedule({ route, navigation }) {
           api(`/api/examinations/v1/${examinationId}`),
         ]);
 
-      const items = Array.isArray(settingsResponse?.items)
-        ? settingsResponse.items
+      // 1. Weekend settings
+      if (settingsResult.status === 'fulfilled') {
+        const settingsResponse = settingsResult.value;
+
+        const items = Array.isArray(settingsResponse?.items)
+          ? settingsResponse.items
+          : [];
+
+        const weekendItem = items.find(item => item?.key === 'weekend_days');
+
+        const weekendValues = Array.isArray(weekendItem?.value)
+          ? weekendItem.value
+          : [];
+
+        setWeekendDays(weekendValues.map(Number).filter(Number.isFinite));
+      } else {
+        // No alert for optional settings API failure.
+        setWeekendDays([]);
+      }
+
+      // 2. Holidays
+      if (holidaysResult.status === 'fulfilled') {
+        const holidaysResponse = holidaysResult.value;
+
+        setHolidays(Array.isArray(holidaysResponse) ? holidaysResponse : []);
+      } else {
+        setHolidays([]);
+
+        const error = holidaysResult.reason;
+
+        Alert.alert(
+          'Calendar Holidays',
+          error?.message || 'Could not load calendar holidays.',
+        );
+      }
+
+      // 3. Examination details - required API
+      if (examinationResult.status === 'rejected') {
+        throw examinationResult.reason;
+      }
+
+      const examinationResponse = examinationResult.value;
+
+      if (!examinationResponse?.data) {
+        throw new Error('Examination details are unavailable.');
+      }
+
+      const examPapers = Array.isArray(examinationResponse.data.exams)
+        ? examinationResponse.data.exams
         : [];
 
-      const weekendItem = items.find(item => item?.key === 'weekend_days');
+      setPapers(examPapers);
 
-      const weekendValues = Array.isArray(weekendItem?.value)
-        ? weekendItem.value
-        : [];
-
-      setWeekendDays(
-        weekendValues.map(Number).filter(value => Number.isFinite(value)),
-      );
-
-      setPapers(
-        Array.isArray(examinationResponse?.data?.exams)
-          ? examinationResponse.data.exams
-          : [],
-      );
-
-      setHolidays(Array.isArray(holidaysResponse) ? holidaysResponse : []);
-
-      navigation.setOptions({
-        title: 'Schedule Papers',
+      onScheduleChange?.({
+        total: examPapers.length,
+        scheduled: examPapers.filter(paper =>
+          isTruthyScheduled(paper?.is_scheduled),
+        ).length,
       });
+
+      if (!embedded) {
+        navigation?.setOptions?.({
+          title: 'Schedule Papers',
+        });
+      }
     } catch (error) {
       console.log('Schedule initialization error:', error);
 
@@ -407,16 +463,14 @@ export default function AdminExaminationSchedule({ route, navigation }) {
     } finally {
       setLoading(false);
     }
-  }, [currentMonth, navigation]);
+  }, [currentMonth, navigation, examinationId, embedded, onScheduleChange]);
 
   useEffect(() => {
     loadInitialData();
-  }, []);
+  }, [loadInitialData]);
 
-  async function changeMonth(offset) {
-    if (monthLoading) {
-      return;
-    }
+  function changeMonth(offset) {
+    if (monthLoading || loading) return;
 
     const nextMonth = new Date(
       currentMonth.getFullYear(),
@@ -426,8 +480,6 @@ export default function AdminExaminationSchedule({ route, navigation }) {
 
     setCurrentMonth(nextMonth);
     setSelectedDateKey(null);
-
-    await loadHolidays(nextMonth);
   }
 
   async function selectCalendarDay(dateKey) {
@@ -618,11 +670,29 @@ export default function AdminExaminationSchedule({ route, navigation }) {
     try {
       const response = await api(`/api/examinations/v1/${examinationId}`);
 
-      setPapers(
-        Array.isArray(response?.data?.exams) ? response.data.exams : [],
-      );
+      const nextPapers = Array.isArray(response?.data?.exams)
+        ? response.data.exams
+        : [];
+
+      setPapers(nextPapers);
+
+      onScheduleChange?.({
+        total: nextPapers.length,
+        scheduled: nextPapers.filter(paper =>
+          isTruthyScheduled(paper?.is_scheduled),
+        ).length,
+      });
+
+      return nextPapers;
     } catch (error) {
-      console.log('Schedule refresh error:', error);
+      console.log('[SCHEDULE REFRESH ERROR]', error);
+
+      Alert.alert(
+        'Schedule Papers',
+        error?.message || 'Could not refresh exam papers.',
+      );
+
+      return null;
     }
   }
 
@@ -989,13 +1059,16 @@ export default function AdminExaminationSchedule({ route, navigation }) {
 
   return (
     <ScrollView
-      style={styles.screen}
+      style={[styles.screen, embedded && styles.embeddedScreen]}
       contentContainerStyle={[
         styles.screenContent,
+        embedded && styles.embeddedContent,
         {
-          paddingBottom: Math.max(insets.bottom, 20),
+          paddingBottom: embedded ? 16 : Math.max(insets.bottom, 20),
         },
       ]}
+      keyboardShouldPersistTaps="handled"
+      nestedScrollEnabled
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.headerCard}>

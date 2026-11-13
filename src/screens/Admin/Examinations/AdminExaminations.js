@@ -7,6 +7,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
   Alert,
@@ -21,6 +22,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '../../../api/client';
 import styles from './AdminExaminations.styles';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import AdminCreateExaminationWizard from './AdminCreateExaminationWizard';
 
 const STATUS_OPTIONS = [
   { label: 'Draft', value: 'draft' },
@@ -167,8 +170,12 @@ export default function AdminExaminations({ navigation }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [examinations, setExaminations] = useState([]);
 
-  const [newExaminationName, setNewExaminationName] = useState('');
-  const [newExaminationStatus, setNewExaminationStatus] = useState('draft');
+  const [tutorialEnabled, setTutorialEnabled] = useState(false);
+  const [tutorialClasses, setTutorialClasses] = useState([]);
+
+  const [onboardingData, setOnboardingData] = useState(null);
+
+  const [draftExaminationCount, setDraftExaminationCount] = useState(0);
 
   const [searchText, setSearchText] = useState('');
   const [appliedSearch, setAppliedSearch] = useState('');
@@ -176,7 +183,6 @@ export default function AdminExaminations({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [listLoading, setListLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [creating, setCreating] = useState(false);
 
   const [showInactive, setShowInactive] = useState(false);
   const [activatingId, setActivatingId] = useState(null);
@@ -227,6 +233,56 @@ export default function AdminExaminations({ navigation }) {
     };
   }, [navigation]);
 
+  const loadTutorialMeta = useCallback(async () => {
+    try {
+      const response = await api('/api/tutorial-evaluations/v1/meta');
+
+      const enabled = response?.enabled === true;
+
+      setTutorialEnabled(enabled);
+
+      setTutorialClasses(
+        Array.isArray(response?.classes) ? response.classes : [],
+      );
+
+      return response;
+    } catch (error) {
+      console.log('[TUTORIAL META ERROR]', {
+        status: error?.status,
+        message: error?.message,
+      });
+
+      // Hide button if availability cannot be verified.
+      setTutorialEnabled(false);
+      setTutorialClasses([]);
+
+      return null;
+    }
+  }, []);
+
+  const loadOnboardingData = useCallback(async () => {
+    try {
+      const response = await api('/api/settings/v1/onboarding');
+
+      if (!response || typeof response !== 'object') {
+        throw new Error('Invalid onboarding response.');
+      }
+
+      setOnboardingData(response);
+
+      return response;
+    } catch (error) {
+      console.log('[EXAM ONBOARDING ERROR]', {
+        status: error?.status,
+        message: error?.message,
+      });
+
+      setOnboardingData(null);
+
+      return null;
+    }
+  }, []);
+
   const loadExaminations = useCallback(
     async (searchValue = '', inactiveValue = false) => {
       const requestId = latestRequestId.current + 1;
@@ -248,7 +304,19 @@ export default function AdminExaminations({ navigation }) {
           return;
         }
 
-        setExaminations(Array.isArray(response?.data) ? response.data : []);
+        const rows = Array.isArray(response?.data) ? response.data : [];
+
+        setExaminations(rows);
+
+        // Prefer the backend-provided draft count.
+        if (
+          !inactiveValue &&
+          Number.isFinite(Number(response?.draft_count)) &&
+          response?.draft_count !== null &&
+          response?.draft_count !== undefined
+        ) {
+          setDraftExaminationCount(Math.max(0, Number(response.draft_count)));
+        }
       } catch (error) {
         if (requestId !== latestRequestId.current) {
           return;
@@ -273,15 +341,25 @@ export default function AdminExaminations({ navigation }) {
   const loadInitialData = useCallback(async () => {
     try {
       setLoading(true);
+
+      // 1. Verify current user and allowed role.
       const me = await loadCurrentUser();
 
-      if (!me) {
-        return;
-      }
+      if (!me) return;
 
-      await loadExaminations('', false);
+      // 2, 3, 4. Load page data.
+      // Individual loaders handle their own errors.
+      await Promise.all([
+        loadTutorialMeta(),
+        loadExaminations('', false),
+        loadOnboardingData(),
+      ]);
     } catch (error) {
-      console.log('Admin examinations initialization error:', error);
+      console.log('[EXAM INITIAL LOAD ERROR]', {
+        status: error?.status,
+        message: error?.message,
+      });
+
       Alert.alert(
         'Examinations',
         error?.message || 'Could not open examinations.',
@@ -289,11 +367,38 @@ export default function AdminExaminations({ navigation }) {
     } finally {
       setLoading(false);
     }
-  }, [loadCurrentUser, loadExaminations]);
+  }, [loadCurrentUser, loadTutorialMeta, loadExaminations, loadOnboardingData]);
 
   useEffect(() => {
     loadInitialData();
   }, [loadInitialData]);
+
+  const hasFocusedOnceRef = useRef(false);
+
+  const appliedFiltersRef = useRef({
+    search: '',
+    inactive: false,
+  });
+
+  useEffect(() => {
+    appliedFiltersRef.current = {
+      search: appliedSearch,
+      inactive: showInactive,
+    };
+  }, [appliedSearch, showInactive]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!hasFocusedOnceRef.current) {
+        hasFocusedOnceRef.current = true;
+        return;
+      }
+
+      const { search, inactive } = appliedFiltersRef.current;
+
+      loadExaminations(search, inactive);
+    }, [loadExaminations]),
+  );
 
   async function applySearch() {
     const normalizedSearch = searchText.trim();
@@ -311,13 +416,30 @@ export default function AdminExaminations({ navigation }) {
   }
 
   async function refreshExaminations() {
+    if (refreshing) return;
+
     try {
       setRefreshing(true);
 
+      const me = await loadCurrentUser();
+
+      if (!me) return;
+
       await Promise.all([
-        loadCurrentUser(),
+        loadTutorialMeta(),
         loadExaminations(appliedSearch, showInactive),
+        loadOnboardingData(),
       ]);
+    } catch (error) {
+      console.log('[EXAM REFRESH ERROR]', {
+        status: error?.status,
+        message: error?.message,
+      });
+
+      Alert.alert(
+        'Refresh Failed',
+        error?.message || 'Could not refresh examinations.',
+      );
     } finally {
       setRefreshing(false);
     }
@@ -335,60 +457,8 @@ export default function AdminExaminations({ navigation }) {
     await loadExaminations(appliedSearch, nextValue);
   }
 
-  async function createExamination() {
-    const name = newExaminationName.trim();
-
-    if (!name) {
-      Alert.alert(
-        'Examination name required',
-        'Please enter an examination name.',
-      );
-      return;
-    }
-
-    try {
-      setCreating(true);
-
-      const payload = {
-        name,
-        status: newExaminationStatus,
-      };
-
-      console.log('Create examination payload:', payload);
-
-      await api('/api/examinations/v1', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
-
-      // Reset the create form.
-      setNewExaminationName('');
-      setNewExaminationStatus('draft');
-
-      // Reset search so the newly created examination is visible.
-      setSearchText('');
-      setAppliedSearch('');
-
-      // Reload the examination list.
-      await loadExaminations('');
-
-      Alert.alert(
-        'Examination created',
-        'The examination was created successfully.',
-      );
-    } catch (error) {
-      console.log('Create examination error:', error);
-
-      Alert.alert(
-        'Create failed',
-        error?.message || 'Could not create the examination.',
-      );
-    } finally {
-      setCreating(false);
-    }
+  function openCreateModal() {
+    navigation.navigate('AdminCreateExaminationWizard');
   }
 
   function openExamination(item) {
@@ -451,7 +521,14 @@ export default function AdminExaminations({ navigation }) {
 
           <View style={styles.metadataRow}>
             <View style={[styles.statusBadge, getStatusStyle(status)]}>
-              <Text style={styles.statusText}>{status}</Text>
+              <Text
+                style={[
+                  styles.statusText,
+                  status === 'draft' && styles.statusDraftText,
+                ]}
+              >
+                {status}
+              </Text>
             </View>
 
             <View style={styles.paperBadge}>
@@ -523,71 +600,52 @@ export default function AdminExaminations({ navigation }) {
     <View
       style={[styles.screen, { paddingBottom: Math.max(insets.bottom, 8) }]}
     >
-      <View style={styles.pageHeader}>
-        <View style={styles.pageHeaderText}>
-          <Text style={styles.pageTitle}>Examinations</Text>
-          <Text style={styles.pageSubtitle}>
-            Create, search, and manage examinations.
-          </Text>
-        </View>
+      {/* Examination Top Actions */}
+      <View style={styles.createActionBar}>
+        <Pressable
+          onPress={openCreateModal}
+          accessibilityRole="button"
+          style={({ pressed }) => [
+            styles.topCreateButton,
+            pressed && styles.controlPressed,
+          ]}
+        >
+          <Text style={styles.topCreateButtonText}>+ Create</Text>
+        </Pressable>
 
-        {currentUser ? (
-          <View style={styles.adminBadge}>
-            <Text style={styles.adminBadgeText}>
-              {currentUser?.is_super_admin
-                ? 'SUPER ADMIN'
-                : currentUser?.resolved_role === 'teacher'
-                ? 'TEACHER'
-                : 'ADMIN'}
-            </Text>
-          </View>
-        ) : null}
-      </View>
-
-      <View style={styles.createCard}>
-        <TextInput
-          value={newExaminationName}
-          onChangeText={setNewExaminationName}
-          placeholder="Examination name (e.g., 2nd Term, 2025)"
-          placeholderTextColor="#64748B"
-          maxLength={150}
-          returnKeyType="done"
-          onSubmitEditing={createExamination}
-          style={styles.createInput}
-        />
-
-        <View style={styles.createActions}>
-          <View style={styles.statusSelectWrapper}>
-            <SelectField
-              value={newExaminationStatus}
-              options={STATUS_OPTIONS}
-              onChange={setNewExaminationStatus}
-              disabled={creating}
-              accessibilityLabel="Examination status"
-            />
-          </View>
-
+        {/* Show only when tutorial API returns enabled: true */}
+        {tutorialEnabled && (
           <Pressable
-            onPress={createExamination}
-            disabled={creating || !newExaminationName.trim()}
+            onPress={() => navigation.navigate('AdminTutorialEvaluation')}
+            accessibilityRole="button"
             style={({ pressed }) => [
-              styles.createButton,
-              (creating || !newExaminationName.trim()) &&
-                styles.controlDisabled,
-              pressed &&
-                !creating &&
-                newExaminationName.trim() &&
-                styles.controlPressed,
+              styles.tutorialButton,
+              pressed && styles.controlPressed,
             ]}
           >
-            {creating ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Text style={styles.createButtonText}>Create</Text>
-            )}
+            <Text style={styles.tutorialButtonText}>Record Tutorial Marks</Text>
           </Pressable>
-        </View>
+        )}
       </View>
+
+      {/* Draft Examination Warning */}
+      {draftExaminationCount > 0 && !showInactive && (
+        <View style={styles.draftWarningBox}>
+          <MaterialCommunityIcons
+            name="alert-circle-outline"
+            size={20}
+            color="#F59E0B"
+          />
+
+          <Text style={styles.draftWarningText}>
+            There {draftExaminationCount === 1 ? 'is' : 'are'}{' '}
+            {draftExaminationCount}{' '}
+            {draftExaminationCount === 1 ? 'examination' : 'examinations'} in
+            draft mode. Students and parents cannot access their papers until
+            they are scheduled and published.
+          </Text>
+        </View>
+      )}
 
       <View style={styles.listSection}>
         <View style={styles.searchRow}>

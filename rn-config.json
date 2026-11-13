@@ -193,9 +193,7 @@
           "packageInstance": "new RNCameraKitPackage()",
           "buildTypes": [],
           "libraryName": "NativeCameraKitSpec",
-          "componentDescriptors": [
-            "CKCameraComponentDescriptor"
-          ],
+          "componentDescriptors": ["CKCameraComponentDescriptor"],
           "cmakeListsPath": "D:/Ascendeon/OTT/School_MGMT/M_Mind/node_modules/react-native-camera-kit/android/build/generated/source/codegen/jni/CMakeLists.txt",
           "cxxModuleCMakeListsModuleName": null,
           "cxxModuleCMakeListsPath": null,
@@ -394,9 +392,7 @@
           "packageInstance": "new RNPDFPackage()",
           "buildTypes": [],
           "libraryName": "rnpdf",
-          "componentDescriptors": [
-            "RNPDFPdfViewComponentDescriptor"
-          ],
+          "componentDescriptors": ["RNPDFPdfViewComponentDescriptor"],
           "cmakeListsPath": "D:/Ascendeon/OTT/School_MGMT/M_Mind/node_modules/react-native-pdf/android/build/generated/source/codegen/jni/CMakeLists.txt",
           "cxxModuleCMakeListsModuleName": null,
           "cxxModuleCMakeListsPath": null,
@@ -641,9 +637,7 @@
           "packageInstance": "new RNCWebViewPackage()",
           "buildTypes": [],
           "libraryName": "RNCWebViewSpec",
-          "componentDescriptors": [
-            "RNCWebViewComponentDescriptor"
-          ],
+          "componentDescriptors": ["RNCWebViewComponentDescriptor"],
           "cmakeListsPath": "D:/Ascendeon/OTT/School_MGMT/M_Mind/node_modules/react-native-webview/android/build/generated/source/codegen/jni/CMakeLists.txt",
           "cxxModuleCMakeListsModuleName": null,
           "cxxModuleCMakeListsPath": null,
@@ -1199,8 +1193,8 @@
     "android": {
       "sourceDir": "D:\\Ascendeon\\OTT\\School_MGMT\\M_Mind\\android",
       "appName": "app",
-      "packageName": "com.mastermind",
-      "applicationId": "com.mastermind",
+      "packageName": "com.mastermindsrp",
+      "applicationId": "com.mastermindsrp",
       "mainActivity": ".MainActivity",
       "assets": []
     }

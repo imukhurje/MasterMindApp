@@ -1,4 +1,4 @@
-package com.mastermind
+package com.mastermindsrp
 
 import android.app.Application
 import com.facebook.react.PackageList

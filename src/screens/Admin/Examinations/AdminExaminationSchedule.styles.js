@@ -846,4 +846,15 @@ export default StyleSheet.create({
   moveTemplateList: {
     maxHeight: 420,
   },
+
+  embeddedScreen: {
+    flex: 1,
+    minHeight: 0,
+    backgroundColor: '#0F172A',
+  },
+
+  embeddedContent: {
+    paddingHorizontal: 4,
+    paddingTop: 8,
+  },
 });

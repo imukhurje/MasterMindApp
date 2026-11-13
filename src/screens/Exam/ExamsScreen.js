@@ -192,6 +192,19 @@ export default function ExamsScreen({ navigation }) {
 
   const [exams, setExams] = useState([]);
 
+  const [currentUser, setCurrentUser] = useState(null);
+
+  const [examMeta, setExamMeta] = useState(null);
+
+  const [pagination, setPagination] = useState({
+    current_page: 1,
+    last_page: 1,
+    per_page: 20,
+    total: 0,
+  });
+
+  const [pageLoading, setPageLoading] = useState(false);
+
   const [loading, setLoading] = useState(true);
 
   const [refreshing, setRefreshing] = useState(false);
@@ -210,27 +223,94 @@ export default function ExamsScreen({ navigation }) {
 
   const [nowMs, setNowMs] = useState(Date.now());
 
-  const fetchExams = useCallback(async () => {
+  const fetchExams = useCallback(async (page = 1) => {
     setError(null);
 
+    const requestedPage = Math.max(1, Number(page) || 1);
+
     try {
-      const res = await api('/api/exams?window_days=30');
+      setPageLoading(true);
 
-      setRole(String(res?.role || 'user').toLowerCase());
+      const res = await api(
+        `/api/exams?window_days=30&page=${requestedPage}&per_page=20`,
+        { method: 'GET' },
+      );
 
-      setExams(Array.isArray(res?.exams) ? res.exams : []);
+      const rows = Array.isArray(res?.exams) ? res.exams : [];
+
+      setExams(rows);
+
+      setRole(currentRole =>
+        String(res?.role || currentRole || 'user').toLowerCase(),
+      );
+
+      const paging = res?.pagination || {};
+
+      setPagination({
+        current_page: Number(paging.current_page ?? requestedPage),
+        last_page: Math.max(1, Number(paging.last_page ?? 1)),
+        per_page: Number(paging.per_page ?? 20),
+        total: Number(paging.total ?? res?.count ?? rows.length),
+      });
     } catch (e) {
-      setError(e?.message || 'Failed to load exams');
+      console.log('[EXAMS LIST ERROR]', {
+        page: requestedPage,
+        status: e?.status,
+        message: e?.message,
+      });
 
-      setExams([]);
+      setError(e?.message || 'Failed to load exams');
     } finally {
+      setPageLoading(false);
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    setLoading(true);
-    fetchExams();
+    let mounted = true;
+
+    async function loadInitialData() {
+      setLoading(true);
+      setError(null);
+
+      const results = await Promise.allSettled([
+        api('/api/me', { method: 'GET' }),
+        api('/api/exams/meta', { method: 'GET' }),
+      ]);
+
+      if (!mounted) return;
+
+      const [meResult, metaResult] = results;
+
+      if (meResult.status === 'fulfilled') {
+        const me = meResult.value;
+
+        setCurrentUser(me);
+
+        const userRole = String(
+          me?.primary_role || me?.role || 'user',
+        ).toLowerCase();
+
+        setRole(userRole);
+      } else {
+        console.log('[EXAMS /ME ERROR]', meResult.reason?.message);
+      }
+
+      if (metaResult.status === 'fulfilled') {
+        setExamMeta(metaResult.value);
+      } else {
+        console.log('[EXAMS META ERROR]', metaResult.reason?.message);
+      }
+
+      // Load the first page of exams.
+      await fetchExams(1);
+    }
+
+    loadInitialData();
+
+    return () => {
+      mounted = false;
+    };
   }, [fetchExams]);
 
   useEffect(() => {
@@ -247,11 +327,11 @@ export default function ExamsScreen({ navigation }) {
     setRefreshing(true);
 
     try {
-      await fetchExams();
+      await fetchExams(pagination.current_page);
     } finally {
       setRefreshing(false);
     }
-  }, [fetchExams]);
+  }, [fetchExams, pagination.current_page]);
 
   const onOpenExam = useCallback(
     async exam => {
@@ -442,6 +522,16 @@ export default function ExamsScreen({ navigation }) {
     return result;
   }, [upcomingExams, pastExams]);
 
+  async function changePage(nextPage) {
+    if (pageLoading) return;
+
+    if (nextPage < 1 || nextPage > pagination.last_page) {
+      return;
+    }
+
+    await fetchExams(nextPage);
+  }
+
   function clearDates() {
     setFromDate(null);
     setToDate(null);
@@ -595,6 +685,46 @@ export default function ExamsScreen({ navigation }) {
                 onChange={onToDateChange}
               />
             ) : null}
+
+            {pagination.total > 0 && (
+              <View style={styles.paginationRow}>
+                <Text style={styles.paginationTotal}>
+                  {pagination.total} total
+                </Text>
+
+                <Pressable
+                  onPress={() => changePage(pagination.current_page - 1)}
+                  disabled={pageLoading || pagination.current_page <= 1}
+                  style={[
+                    styles.paginationButton,
+                    (pageLoading || pagination.current_page <= 1) &&
+                      styles.paginationDisabled,
+                  ]}
+                >
+                  <Text style={styles.paginationButtonText}>←</Text>
+                </Pressable>
+
+                <Text style={styles.paginationPage}>
+                  {pagination.current_page}/{pagination.last_page}
+                </Text>
+
+                <Pressable
+                  onPress={() => changePage(pagination.current_page + 1)}
+                  disabled={
+                    pageLoading ||
+                    pagination.current_page >= pagination.last_page
+                  }
+                  style={[
+                    styles.paginationButton,
+                    (pageLoading ||
+                      pagination.current_page >= pagination.last_page) &&
+                      styles.paginationDisabled,
+                  ]}
+                >
+                  <Text style={styles.paginationButtonText}>→</Text>
+                </Pressable>
+              </View>
+            )}
           </View>
         }
         renderItem={({ item }) => {
@@ -619,6 +749,50 @@ export default function ExamsScreen({ navigation }) {
               Try changing your search or date filters.
             </Text>
           </View>
+        }
+        ListFooterComponent={
+          pagination.total > 0 ? (
+            <View style={styles.paginationRow}>
+              <Text style={styles.paginationTotal}>
+                {pagination.total} total
+              </Text>
+
+              <Pressable
+                onPress={() => changePage(pagination.current_page - 1)}
+                disabled={pageLoading || pagination.current_page <= 1}
+                style={[
+                  styles.paginationButton,
+                  (pageLoading || pagination.current_page <= 1) &&
+                    styles.paginationDisabled,
+                ]}
+              >
+                <Text style={styles.paginationButtonText}>←</Text>
+              </Pressable>
+
+              <Text style={styles.paginationPage}>
+                {pagination.current_page}/{pagination.last_page}
+              </Text>
+
+              <Pressable
+                onPress={() => changePage(pagination.current_page + 1)}
+                disabled={
+                  pageLoading || pagination.current_page >= pagination.last_page
+                }
+                style={[
+                  styles.paginationButton,
+                  (pageLoading ||
+                    pagination.current_page >= pagination.last_page) &&
+                    styles.paginationDisabled,
+                ]}
+              >
+                <Text style={styles.paginationButtonText}>→</Text>
+              </Pressable>
+
+              {pageLoading ? (
+                <ActivityIndicator size="small" color={COLORS.PRIMARY} />
+              ) : null}
+            </View>
+          ) : null
         }
       />
     </View>

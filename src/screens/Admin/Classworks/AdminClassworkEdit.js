@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
   Alert,
+  Modal,
   Pressable,
   ScrollView,
   Text,
@@ -74,6 +75,18 @@ export default function AdminClassworkEdit() {
 
   const [note, setNote] = useState(String(classwork?.body || ''));
 
+  // Class is fixed on the Edit screen; subjects depend on its class_group_id.
+  const classGroupId = Number(classwork?.class_group_id);
+  const [subjects, setSubjects] = useState([]);
+  const [selectedSubjectIds, setSelectedSubjectIds] = useState(() =>
+    Array.isArray(classwork?.courses)
+      ? classwork.courses.map(course => Number(course.id)).filter(Number.isFinite)
+      : [],
+  );
+  const [subjectsLoading, setSubjectsLoading] = useState(false);
+  const [subjectsError, setSubjectsError] = useState(false);
+  const [subjectModalVisible, setSubjectModalVisible] = useState(false);
+
   const [message, setMessage] = useState('');
 
   const [selectedFiles, setSelectedFiles] = useState([]);
@@ -98,6 +111,58 @@ export default function AdminClassworkEdit() {
 
     return name;
   }, [classwork]);
+
+  const loadSubjects = useCallback(async () => {
+    if (!Number.isInteger(classGroupId) || classGroupId <= 0) {
+      setSubjects([]);
+      setSubjectsError(true);
+      return;
+    }
+
+    setSubjectsLoading(true);
+    setSubjectsError(false);
+    try {
+      const response = await api(
+        `/api/classworks/courses?class_group_id=${encodeURIComponent(classGroupId)}`,
+      );
+      const rows = Array.isArray(response?.courses) ? response.courses : [];
+      setSubjects(rows.filter(row => Number.isFinite(Number(row?.id))).map(row => ({
+        id: Number(row.id),
+        label: String(row.label || row.title || `Subject ${row.id}`),
+      })));
+    } catch (error) {
+      console.log('[EDIT CLASSWORK SUBJECTS]', {
+        status: error?.status, message: error?.message,
+      });
+      setSubjectsError(true);
+    } finally {
+      setSubjectsLoading(false);
+    }
+  }, [classGroupId]);
+
+  useEffect(() => {
+    loadSubjects();
+  }, [loadSubjects]);
+
+  const toggleSubject = useCallback(subjectId => {
+    const numericId = Number(subjectId);
+    setSelectedSubjectIds(previous => previous.includes(numericId)
+      ? previous.filter(value => value !== numericId)
+      : [...previous, numericId]);
+  }, []);
+
+  const selectedSubjects = useMemo(() => {
+    const courseFallback = Array.isArray(classwork?.courses)
+      ? classwork.courses.map(course => ({
+          id: Number(course.id),
+          label: String(course.label || course.title || `Subject ${course.id}`),
+        })) : [];
+    const options = [...subjects];
+    courseFallback.forEach(course => {
+      if (!options.some(option => option.id === course.id)) options.push(course);
+    });
+    return options.filter(option => selectedSubjectIds.includes(option.id));
+  }, [subjects, selectedSubjectIds, classwork]);
 
   const handleChooseFiles = async () => {
     try {
@@ -341,12 +406,23 @@ export default function AdminClassworkEdit() {
       return;
     }
 
+    if (selectedSubjectIds.length === 0) {
+      Alert.alert('Classwork', 'Please select at least one subject.');
+      return;
+    }
+
+    if (subjectsLoading || subjectsError) {
+      Alert.alert('Classwork', 'Subjects are not ready. Please retry loading them.');
+      return;
+    }
+
     try {
       setSavingChanges(true);
 
       const payload = {
         title: trimmedTitle,
         body: trimmedNote || null,
+        course_ids: selectedSubjectIds.map(Number),
       };
 
       const response = await api(`/api/classworks/${encodeURIComponent(id)}`, {
@@ -401,6 +477,47 @@ export default function AdminClassworkEdit() {
             onChangeText={setTitle}
             style={styles.input}
           />
+        </View>
+
+        {/* Subjects belong to the class already assigned to this classwork. */}
+        <View style={styles.field}>
+          <Text style={styles.label}>Subjects *</Text>
+          <Pressable
+            disabled={subjectsLoading || savingChanges || subjectsError}
+            onPress={() => setSubjectModalVisible(true)}
+            style={[styles.subjectSelectBox, (subjectsLoading || subjectsError) && styles.buttonDisabled]}
+          >
+            <Text style={styles.subjectSelectText} numberOfLines={1}>
+              {subjectsLoading
+                ? 'Loading subjects...'
+                : selectedSubjectIds.length
+                  ? `${selectedSubjectIds.length} subjects selected`
+                  : 'Select subjects'}
+            </Text>
+            {subjectsLoading
+              ? <ActivityIndicator size="small" color="#60A5FA" />
+              : <MaterialCommunityIcons name="chevron-down" size={22} color="#AFC0D8" />}
+          </Pressable>
+          {subjectsError && (
+            <Pressable onPress={loadSubjects} style={styles.subjectRetry}>
+              <Text style={styles.subjectRetryText}>Could not load subjects. Tap to retry.</Text>
+            </Pressable>
+          )}
+          {selectedSubjects.length > 0 && (
+            <View style={styles.selectedSubjectsRow}>
+              {selectedSubjects.map(subject => (
+                <Pressable
+                  key={String(subject.id)}
+                  disabled={savingChanges}
+                  onPress={() => toggleSubject(subject.id)}
+                  style={styles.selectedSubjectChip}
+                >
+                  <Text style={styles.selectedSubjectText}>{subject.label}</Text>
+                  <MaterialCommunityIcons name="close" size={15} color="#DCEBFF" />
+                </Pressable>
+              ))}
+            </View>
+          )}
         </View>
 
         <View style={styles.field}>
@@ -605,12 +722,12 @@ export default function AdminClassworkEdit() {
           </Pressable>
 
           <Pressable
-            disabled={savingChanges}
+            disabled={savingChanges || subjectsLoading || subjectsError || selectedSubjectIds.length === 0}
             onPress={handleSaveChanges}
             style={({ pressed }) => [
               styles.saveButton,
 
-              savingChanges && styles.buttonDisabled,
+              (savingChanges || subjectsLoading || subjectsError || selectedSubjectIds.length === 0) && styles.buttonDisabled,
 
               pressed && !savingChanges && styles.controlPressed,
             ]}
@@ -623,6 +740,60 @@ export default function AdminClassworkEdit() {
           </Pressable>
         </View>
       </ScrollView>
+
+      <Modal
+        visible={subjectModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSubjectModalVisible(false)}
+      >
+        <View style={styles.subjectModalOverlay}>
+          <View style={styles.subjectModalCard}>
+            <View style={styles.subjectModalHeader}>
+              <Text style={styles.subjectModalTitle}>Select Subjects</Text>
+              <Pressable onPress={() => setSubjectModalVisible(false)}>
+                <MaterialCommunityIcons name="close" size={23} color="#F8FAFC" />
+              </Pressable>
+            </View>
+            <View style={styles.subjectModalToolbar}>
+              <Text style={styles.subjectCount}>{selectedSubjectIds.length} selected</Text>
+              <Pressable onPress={() => {
+                const ids = subjects.map(subject => subject.id);
+                setSelectedSubjectIds(previous => ids.every(subjectId => previous.includes(subjectId))
+                  ? previous.filter(value => !ids.includes(value))
+                  : [...new Set([...previous, ...ids])]);
+              }}>
+                <Text style={styles.subjectSelectAll}>Select / Deselect All</Text>
+              </Pressable>
+            </View>
+            <ScrollView style={styles.subjectModalList}>
+              {subjects.length === 0 && (
+                <Text style={styles.subjectEmptyText}>No subjects available for this class.</Text>
+              )}
+              {subjects.map(subject => {
+                const selected = selectedSubjectIds.includes(subject.id);
+                return (
+                  <Pressable
+                    key={String(subject.id)}
+                    onPress={() => toggleSubject(subject.id)}
+                    style={styles.subjectOption}
+                  >
+                    <Text style={styles.subjectOptionText}>{subject.label}</Text>
+                    <MaterialCommunityIcons
+                      name={selected ? 'checkbox-marked' : 'checkbox-blank-outline'}
+                      size={22}
+                      color={selected ? '#60A5FA' : '#8294AA'}
+                    />
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            <Pressable style={styles.subjectDoneButton} onPress={() => setSubjectModalVisible(false)}>
+              <Text style={styles.subjectDoneText}>Done</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

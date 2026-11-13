@@ -24,7 +24,14 @@ import {
   isEmail,
   extractToken,
 } from '../../api/auth';
-import { getToken, setToken, clearToken, api, getOrg } from '../../api/client';
+import {
+  getToken,
+  setToken,
+  clearToken,
+  api,
+  getOrg,
+  clearOrg,
+} from '../../api/client';
 import Config from 'react-native-config';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
@@ -36,6 +43,7 @@ const LOGIN_METHOD = {
 };
 
 const ANDROID_UPDATE_URL = Config.ANDROID_UPDATE_URL;
+const DEFAULT_APP_NAME = Config.APP_NAME;
 
 function compareVersions(versionA, versionB) {
   const normalize = value =>
@@ -400,6 +408,20 @@ export default function Login() {
     navigation.navigate('ForgotPassword');
   }
 
+  async function onChangeOrg() {
+    try {
+      await setToken(null);
+      await clearOrg();
+
+      navigation?.reset?.({
+        index: 0,
+        routes: [{ name: 'OrgSelect' }],
+      });
+    } catch (e) {
+      Alert.alert('Error', e?.message || 'Failed to change organization.');
+    }
+  }
+
   useFocusEffect(
     React.useCallback(() => {
       if (Platform.OS !== 'android') {
@@ -505,10 +527,7 @@ export default function Login() {
           />
         )}
 
-        <Text style={styles.orgName}>
-          {org?.name ||
-            'Sinthi Ramakrishna Sangha Vidyamandir (Govt. Sponsd.) (H. S.)'}
-        </Text>
+        <Text style={styles.orgName}>{org?.name || DEFAULT_APP_NAME}</Text>
       </View>
 
       <View style={styles.loginCard}>

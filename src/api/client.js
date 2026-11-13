@@ -247,8 +247,27 @@ export async function api(path, opts = {}) {
     data = { message: text };
   }
 
-  if (res.status === 401 || res.status === 403) {
-    await clearToken();
+  // if (res.status === 401 || res.status === 403) {
+  //   await clearToken();
+  // }
+
+  if (res.status === 403) {
+    console.log('[API FORBIDDEN]', {
+      path,
+      status: res.status,
+    });
+
+    // Never remove the auth token for a 403 response.
+    // The user is authenticated but lacks permission.
+  }
+
+  // A 401 from an individual feature endpoint is not,
+  // by itself, sufficient proof that the session is invalid.
+  if (res.status === 401) {
+    console.log('[API UNAUTHENTICATED]', {
+      path,
+      status: res.status,
+    });
   }
 
   if (!res.ok) {
@@ -365,19 +384,6 @@ export async function apiOrg(path, orgCode) {
       logo_url:
         'https://demo.ascendlearn.org/storage/branding/logos/6Aw5XbxgmcJPlUzrUNHea2E643X9zP6wFoHJtdUG.png',
       base_url: 'https://demo.ascendlearn.org',
-    },
-    {
-      code: 'SRSV2026',
-      name: 'Sinthi Ramakrishna Sangha Vidyamandir (Govt. Sponsd.) (H. S.)',
-      logo_url: 'https://www.srsvboys.in/assets/images/brand/school-logo.webp',
-      base_url: 'https://school.srsvboys.in',
-    },
-    {
-      code: 'MMIND2026',
-      name: 'Master Mind',
-      logo_url:
-        'https://www.mastermindsrp.com/assets/images/logo/website-logo.png',
-      base_url: 'https://learning.mastermindsrp.com',
     },
   ];
 

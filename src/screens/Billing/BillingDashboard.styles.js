@@ -979,6 +979,48 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
   },
+
+  paidDownloadActions: {
+    marginTop: 12,
+    gap: 9,
+  },
+
+  paidDownloadButton: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    borderRadius: 10,
+    backgroundColor: '#142B49',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+
+  billDownloadButton: {
+    backgroundColor: '#2563EB',
+    borderColor: '#3B82F6',
+  },
+
+  paidDownloadButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+
+  downloadDisabled: {
+    opacity: 0.45,
+  },
+  unpaidDownloadActions: {
+    marginTop: 12,
+    gap: 9,
+  },
+
+  continuePaymentButton: {
+    backgroundColor: '#2563EB',
+    borderColor: '#3B82F6',
+  },
 });
 
 export default styles;

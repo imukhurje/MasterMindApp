@@ -69,100 +69,101 @@ function getClassLabel(item) {
   return className || section || 'Class not available';
 }
 
-const ClassworkCard = memo(
-  ({ item, canManage, showActions, deleting, onEdit, onDelete }) => {
-    return (
-      <Pressable style={styles.card}>
-        <View style={styles.cardTopRow}>
-          <View style={styles.cardInfo}>
-            <Text style={styles.cardTitle} numberOfLines={2}>
-              {item?.title || 'Classwork'}
-            </Text>
+function getSubjectNames(item) {
+  if (!Array.isArray(item?.courses)) {
+    return '';
+  }
 
-            <Text style={styles.classDate} numberOfLines={2}>
-              {getClassLabel(item)}
-              {' · '}
-              {formatCreatedAt(item?.created_at)}
+  return item.courses
+    .map(course => String(course?.title || course?.label || '').trim())
+    .filter(Boolean)
+    .join(', ');
+}
+
+const ClassworkCard = memo(({ item, deleting, onEdit, onDelete }) => {
+  const canManage = item?.can_manage === true;
+  const showActions = true;
+  return (
+    <Pressable style={styles.card}>
+      <View style={styles.cardTopRow}>
+        <View style={styles.cardInfo}>
+          <Text style={styles.cardTitle} numberOfLines={2}>
+            {item?.title || 'Classwork'}
+          </Text>
+
+          <Text style={styles.classDate} numberOfLines={2}>
+            {getClassLabel(item)}
+            {' · '}
+            {formatCreatedAt(item?.created_at)}
+          </Text>
+          {!!getSubjectNames(item) && (
+            <Text style={styles.subjectText} numberOfLines={2}>
+              {getSubjectNames(item)}
             </Text>
-          </View>
+          )}
         </View>
+      </View>
 
-        <Text
-          style={[styles.cardBody, !item?.body && styles.emptyBody]}
-          numberOfLines={4}
-        >
-          {item?.body || 'No note added.'}
-        </Text>
+      <Text
+        style={[styles.cardBody, !item?.body && styles.emptyBody]}
+        numberOfLines={4}
+      >
+        {item?.body || 'No note added.'}
+      </Text>
 
-        {showActions ? (
-          <View style={styles.cardActions}>
-            <Pressable
-              disabled={!canManage}
-              onPress={event => {
-                event?.stopPropagation?.();
-
-                if (!canManage) {
-                  return;
-                }
-
+      {showActions ? (
+        <View style={styles.cardActions}>
+          <Pressable
+            disabled={!canManage}
+            onPress={() => {
+              if (canManage) {
                 onEdit(item);
-              }}
-              style={({ pressed }) => [
-                styles.editButton,
-
-                !canManage && styles.disabledActionButton,
-
-                pressed && canManage && styles.controlPressed,
+              }
+            }}
+            style={({ pressed }) => [
+              styles.editButton,
+              !canManage && styles.disabledActionButton,
+              pressed && canManage && styles.controlPressed,
+            ]}
+          >
+            <Text
+              style={[
+                styles.editButtonText,
+                !canManage && styles.disabledActionText,
               ]}
             >
-              <Text
-                style={[
-                  styles.editButtonText,
+              Edit
+            </Text>
+          </Pressable>
 
-                  !canManage && styles.disabledActionText,
-                ]}
-              >
-                Edit
-              </Text>
-            </Pressable>
-
-            <Pressable
-              disabled={!canManage || deleting}
-              onPress={event => {
-                event?.stopPropagation?.();
-
-                if (!canManage || deleting) {
-                  return;
-                }
-
+          <Pressable
+            disabled={!canManage || deleting}
+            onPress={() => {
+              if (canManage && !deleting) {
                 onDelete(item);
-              }}
-              style={({ pressed }) => [
-                styles.deleteButton,
-
-                !canManage && styles.disabledDeleteButton,
-
-                deleting && styles.buttonDisabled,
-
-                pressed && canManage && !deleting && styles.controlPressed,
+              }
+            }}
+            style={({ pressed }) => [
+              styles.deleteButton,
+              !canManage && styles.disabledDeleteButton,
+              deleting && styles.buttonDisabled,
+              pressed && canManage && !deleting && styles.controlPressed,
+            ]}
+          >
+            <Text
+              style={[
+                styles.deleteButtonText,
+                !canManage && styles.disabledActionText,
               ]}
             >
-              <Text
-                style={[
-                  styles.deleteButtonText,
-
-                  !canManage && styles.disabledActionText,
-                ]}
-              >
-                {deleting ? 'Deleting...' : 'Delete'}
-              </Text>
-            </Pressable>
-          </View>
-        ) : null}
-      </Pressable>
-    );
-  },
-);
+              {deleting ? 'Deleting...' : 'Delete'}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+});
 
 export default function AdminClassworks() {
   const navigation = useNavigation();
@@ -278,14 +279,7 @@ export default function AdminClassworks() {
 
   const role = getRole(me);
 
-  const isTeacher = role === 'teacher';
-
-  const canManage = role === 'admin' || role === 'super_admin';
-
-  const showActions = canManage || isTeacher;
-
-  const canCreate =
-    role === 'admin' || role === 'super_admin' || role === 'teacher';
+  const canCreate = ['admin', 'super_admin', 'teacher'].includes(role);
 
   const filteredItems = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -331,25 +325,33 @@ export default function AdminClassworks() {
 
   const handleEdit = useCallback(
     item => {
-      if (!canManage) {
+      if (item?.can_manage !== true || !item?.id) {
+        Alert.alert(
+          'Access Denied',
+          'You do not have permission to edit this classwork.',
+        );
         return;
       }
 
-      /*
-       * Register this screen after
-       * edit API/page is added.
-       */
       navigation.navigate('AdminClassworkEdit', {
-        id: item?.id,
+        id: item.id,
         classwork: item,
         onboarding,
       });
     },
-    [canManage, navigation, onboarding],
+    [navigation, onboarding],
   );
 
   const handleDelete = useCallback(
     item => {
+      if (item?.can_manage !== true) {
+        Alert.alert(
+          'Access Denied',
+          'You do not have permission to delete this classwork.',
+        );
+        return;
+      }
+
       if (!item?.id || deletingId) {
         return;
       }
@@ -457,8 +459,6 @@ export default function AdminClassworks() {
         renderItem={({ item }) => (
           <ClassworkCard
             item={item}
-            canManage={canManage}
-            showActions={showActions}
             deleting={Number(deletingId) === Number(item.id)}
             onEdit={handleEdit}
             onDelete={handleDelete}

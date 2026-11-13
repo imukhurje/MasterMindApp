@@ -77,6 +77,8 @@ export default function AdminBillingPaymentDetails({ route, navigation }) {
 
   const [loading, setLoading] = useState(itemType === 'missing');
 
+  const [generatingBill, setGeneratingBill] = useState(false);
+
   const [preview, setPreview] = useState(null);
 
   const [downloadingBillPdf, setDownloadingBillPdf] = useState(false);
@@ -469,6 +471,123 @@ export default function AdminBillingPaymentDetails({ route, navigation }) {
     savePdfToLocalDrive,
   ]);
 
+  const handleGenerateIndividualBill = useCallback(async () => {
+    const studentId = Number(selectedItem?.student_id);
+    const month = selectedMonth;
+
+    if (generatingBill) return;
+
+    if (!Number.isInteger(studentId) || studentId <= 0) {
+      Alert.alert('Generate Bill', 'Invalid student ID.');
+      return;
+    }
+
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      Alert.alert('Generate Bill', 'Invalid billing month.');
+      return;
+    }
+
+    if (preview?.can_generate !== true) {
+      Alert.alert(
+        'Generate Bill',
+        preview?.reason || 'This bill cannot be generated.',
+      );
+      return;
+    }
+
+    let createdBillId = null;
+
+    try {
+      setGeneratingBill(true);
+
+      // 1. Generate the bill.
+      const response = await api(
+        `/api/billing/v2/payments/missing-students/${studentId}/generate`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ month }),
+        },
+      );
+
+      const billId = Number(response?.bill_id);
+
+      if (response?.ok !== true || !Number.isInteger(billId) || billId <= 0) {
+        throw new Error('Bill generation failed or bill ID is missing.');
+      }
+
+      createdBillId = billId;
+
+      // 2. Fetch latest bills to find the newly generated bill.
+      // Search additional pages if the bill is not on page 1.
+      let newBill = null;
+      let currentPage = 1;
+      let lastPage = 1;
+
+      do {
+        const paymentsResponse = await api(
+          `/api/billing/v2/payments?page=${currentPage}&months%5B%5D=${encodeURIComponent(
+            month,
+          )}`,
+        );
+
+        const paymentRows = Array.isArray(paymentsResponse?.rows)
+          ? paymentsResponse.rows
+          : [];
+
+        newBill =
+          paymentRows.find(item => Number(item.id) === createdBillId) || null;
+
+        lastPage = Math.max(1, Number(paymentsResponse?.last_page) || 1);
+
+        currentPage += 1;
+      } while (!newBill && currentPage <= lastPage);
+
+      if (!newBill) {
+        Alert.alert(
+          'Bill Generated',
+          `Bill #${createdBillId} was created successfully, but its updated details could not be found in the payment list. Please refresh Billing.`,
+        );
+        return;
+      }
+
+      // 3. Stay on the SAME Payment Details screen.
+      // Change the route from "missing" to "bill".
+      navigation.setParams({
+        itemType: 'bill',
+        item: newBill,
+        month,
+      });
+
+      // Do not call navigation.goBack().
+      // PDF signed URL is requested by the existing
+      // Download Bill PDF button when needed.
+    } catch (error) {
+      console.log('[GENERATE BILL ERROR]', {
+        status: error?.status,
+        message: error?.message,
+        createdBillId,
+      });
+
+      Alert.alert(
+        createdBillId ? 'Bill Generated' : 'Generate Bill Failed',
+        createdBillId
+          ? `Bill #${createdBillId} was created, but its details could not be loaded. Please refresh Billing. ${
+              error?.message || ''
+            }`
+          : error?.message || 'Could not generate the bill.',
+      );
+    } finally {
+      setGeneratingBill(false);
+    }
+  }, [
+    selectedItem?.student_id,
+    selectedMonth,
+    generatingBill,
+    preview?.can_generate,
+    preview?.reason,
+    navigation,
+  ]);
+
   const loadMissingPreview = useCallback(async () => {
     if (itemType !== 'missing') {
       return;
@@ -604,22 +723,35 @@ export default function AdminBillingPaymentDetails({ route, navigation }) {
           ) : null}
 
           <Pressable
-            disabled={!canGenerate}
-            onPress={() =>
-              Alert.alert(
-                'Generate Bill',
-                'The individual bill-generation endpoint has not been provided yet.',
-              )
-            }
+            onPress={handleGenerateIndividualBill}
+            disabled={!canGenerate || generatingBill}
+            accessibilityRole="button"
+            accessibilityLabel="Generate Bill"
             style={({ pressed }) => [
               styles.primaryButton,
-
-              !canGenerate && styles.controlDisabled,
-
-              pressed && canGenerate && styles.controlPressed,
+              (!canGenerate || generatingBill) && styles.controlDisabled,
+              pressed &&
+                canGenerate &&
+                !generatingBill &&
+                styles.controlPressed,
             ]}
           >
-            <Text style={styles.primaryButtonText}>Generate Bill</Text>
+            {generatingBill ? (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 9,
+                }}
+              >
+                <ActivityIndicator size="small" color="#FFFFFF" />
+
+                <Text style={styles.primaryButtonText}>Generating Bill...</Text>
+              </View>
+            ) : (
+              <Text style={styles.primaryButtonText}>Generate Bill</Text>
+            )}
           </Pressable>
         </View>
       </ScrollView>

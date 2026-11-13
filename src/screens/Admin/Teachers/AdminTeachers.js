@@ -26,6 +26,11 @@ import TeacherIdentityCardsModal from './TeacherIdentityCardsModal';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import Clipboard from '@react-native-clipboard/clipboard';
 
+import ReactNativeBlobUtil from 'react-native-blob-util';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+import { getOrg } from '../../../api/client';
+
 const PER_PAGE = 20;
 
 function normalizeClassGroup(item) {
@@ -62,13 +67,19 @@ function normalizeTeacher(item) {
 
     email: String(item?.email || ''),
 
-    phone: String(item?.phone || ''),
+    phone: String(item?.phone ?? ''),
 
-    department: String(item?.department || ''),
+    address_line1: String(item?.address_line1 ?? ''),
+    address_line2: String(item?.address_line2 ?? ''),
+    city: String(item?.city ?? ''),
+    state: String(item?.state ?? ''),
+    postal_code: String(item?.postal_code ?? ''),
 
-    designation: String(item?.designation || ''),
+    department: String(item?.department ?? ''),
+    designation: String(item?.designation ?? ''),
+    bio: String(item?.bio ?? ''),
 
-    bio: String(item?.bio || ''),
+    isDraft: item?.is_draft === true,
 
     photoUrl: String(item?.photo_url || ''),
 
@@ -153,6 +164,18 @@ export default function AdminTeachers({ navigation }) {
     password: '',
     hasExistingCredentials: false,
   });
+
+  const [bulkCredentialsVisible, setBulkCredentialsVisible] = useState(false);
+
+  const [bulkCredentialsLoading, setBulkCredentialsLoading] = useState(false);
+
+  const [bulkCredentialsSaving, setBulkCredentialsSaving] = useState(false);
+
+  const [bulkCredentialsRows, setBulkCredentialsRows] = useState([]);
+
+  const [bulkPasswordVisible, setBulkPasswordVisible] = useState({});
+
+  const [downloadingTeachers, setDownloadingTeachers] = useState(false);
 
   const [showSecurityPassword, setShowSecurityPassword] = useState(false);
 
@@ -559,6 +582,317 @@ export default function AdminTeachers({ navigation }) {
     }
   }
 
+  const handleGenerateCredentials = async () => {
+    if (bulkCredentialsLoading || bulkCredentialsSaving) return;
+
+    // Teacher user IDs, not teacher profile IDs.
+    const userIds = [
+      ...new Set(
+        teachers
+          .map(teacher => Number(teacher.userId))
+          .filter(id => Number.isInteger(id) && id > 0),
+      ),
+    ];
+
+    if (userIds.length === 0) {
+      Alert.alert(
+        'Generate Credentials',
+        'No valid teacher user IDs are available.',
+      );
+      return;
+    }
+
+    setBulkCredentialsRows([]);
+    setBulkPasswordVisible({});
+    setBulkCredentialsVisible(true);
+
+    try {
+      setBulkCredentialsLoading(true);
+
+      const response = await api('/api/personnel/credentials/preview', {
+        method: 'POST',
+        body: JSON.stringify({
+          role: 'teacher',
+          user_ids: userIds,
+        }),
+      });
+
+      if (!Array.isArray(response?.rows)) {
+        throw new Error('Invalid credential preview response.');
+      }
+
+      const validUserIds = new Set(userIds);
+
+      const rows = response.rows
+        .filter(item => validUserIds.has(Number(item.user_id)))
+        .map(item => ({
+          user_id: Number(item.user_id),
+          name: String(item.name || ''),
+          email: String(item.email || ''),
+          username: String(item.username || ''),
+          password: String(item.password || ''),
+          has_existing_credentials: item.has_existing_credentials === true,
+        }));
+
+      if (rows.length === 0) {
+        throw new Error('No credential previews were returned.');
+      }
+
+      setBulkCredentialsRows(rows);
+    } catch (error) {
+      console.log('[BULK CREDENTIAL PREVIEW ERROR]', {
+        status: error?.status,
+        message: error?.message,
+      });
+
+      setBulkCredentialsVisible(false);
+
+      Alert.alert(
+        'Generate Credentials',
+        error?.message || 'Could not generate credentials.',
+      );
+    } finally {
+      setBulkCredentialsLoading(false);
+    }
+  };
+
+  const updateBulkCredential = (userId, field, value) => {
+    setBulkCredentialsRows(previous =>
+      previous.map(item =>
+        item.user_id === userId ? { ...item, [field]: value } : item,
+      ),
+    );
+  };
+
+  const closeBulkCredentialsModal = () => {
+    if (bulkCredentialsSaving || bulkCredentialsLoading) return;
+
+    setBulkCredentialsVisible(false);
+    setBulkCredentialsRows([]);
+    setBulkPasswordVisible({});
+  };
+
+  const handleSaveBulkCredentials = () => {
+    if (bulkCredentialsSaving || bulkCredentialsLoading) return;
+
+    if (bulkCredentialsRows.length === 0) return;
+
+    const credentials = bulkCredentialsRows.map(row => ({
+      user_id: row.user_id,
+      username: row.username.trim(),
+      password: row.password,
+    }));
+
+    if (credentials.some(row => !row.username || !row.password.trim())) {
+      Alert.alert(
+        'Validation',
+        'Every teacher must have a username and password.',
+      );
+      return;
+    }
+
+    const usernames = credentials.map(row => row.username.toLowerCase());
+
+    if (new Set(usernames).size !== usernames.length) {
+      Alert.alert(
+        'Duplicate Username',
+        'Each teacher must have a unique username.',
+      );
+      return;
+    }
+
+    const existingCount = bulkCredentialsRows.filter(
+      row => row.has_existing_credentials,
+    ).length;
+
+    if (existingCount > 0) {
+      Alert.alert(
+        'Replace Existing Credentials',
+        `${existingCount} teacher(s) already have credentials. Saving will replace their existing credentials. Continue?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Save Credentials',
+            onPress: saveBulkCredentials,
+          },
+        ],
+      );
+    } else {
+      saveBulkCredentials();
+    }
+  };
+
+  const saveBulkCredentials = async () => {
+    if (bulkCredentialsSaving || bulkCredentialsLoading) return;
+
+    const credentials = bulkCredentialsRows.map(row => ({
+      user_id: Number(row.user_id),
+      username: String(row.username || '').trim(),
+      password: String(row.password || ''),
+    }));
+
+    if (
+      credentials.length === 0 ||
+      credentials.some(
+        item =>
+          !Number.isInteger(item.user_id) ||
+          item.user_id <= 0 ||
+          !item.username ||
+          !item.password.trim(),
+      )
+    ) {
+      Alert.alert(
+        'Validation',
+        'Every teacher must have a valid username and password.',
+      );
+      return;
+    }
+
+    try {
+      setBulkCredentialsSaving(true);
+
+      const response = await api('/api/personnel/credentials', {
+        method: 'POST',
+        body: JSON.stringify({
+          role: 'teacher',
+          credentials,
+        }),
+      });
+
+      if (!Array.isArray(response?.rows)) {
+        throw new Error('Invalid save credentials response.');
+      }
+
+      // Verify that all requested users were saved.
+      const savedMap = new Map(
+        response.rows.map(item => [
+          Number(item.user_id),
+          String(item.username || ''),
+        ]),
+      );
+
+      const allSaved = credentials.every(
+        item => savedMap.get(item.user_id) === item.username,
+      );
+
+      if (!allSaved) {
+        throw new Error(
+          'The server did not confirm all credentials. Review before retrying.',
+        );
+      }
+
+      // Clear sensitive credentials after successful save.
+      setBulkCredentialsRows([]);
+      setBulkPasswordVisible({});
+      setBulkCredentialsVisible(false);
+
+      Alert.alert(
+        'Credentials Saved',
+        `${credentials.length} teacher credential(s) saved successfully.`,
+      );
+    } catch (error) {
+      console.log('[BULK CREDENTIAL SAVE ERROR]', {
+        status: error?.status,
+        message: error?.message,
+      });
+
+      Alert.alert(
+        'Save Failed',
+        error?.message || 'Unable to save teacher credentials.',
+      );
+    } finally {
+      setBulkCredentialsSaving(false);
+    }
+  };
+
+  const handleDownloadTeachers = async () => {
+    if (downloadingTeachers) return;
+
+    let tempPath = null;
+
+    try {
+      setDownloadingTeachers(true);
+
+      const org = await getOrg();
+
+      const baseUrl = String(org?.base_url || '').replace(/\/+$/, '');
+      const orgCode = String(org?.code || '');
+
+      if (!baseUrl || !orgCode) {
+        throw new Error('Organization configuration is missing.');
+      }
+
+      // Use the same authenticated token as api/client.js.
+      const token = await AsyncStorage.getItem(`auth_token:${orgCode}`);
+
+      if (!token) {
+        throw new Error('Please log in before downloading.');
+      }
+
+      const url = `${baseUrl}/api/teachers/download.zip`;
+
+      const response = await ReactNativeBlobUtil.config({
+        fileCache: true,
+        appendExt: 'zip',
+      }).fetch('GET', url, {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/zip',
+      });
+
+      tempPath = response.path();
+
+      const status = Number(response.info()?.status);
+
+      if (status < 200 || status >= 300) {
+        throw new Error(`Download failed (HTTP ${status}).`);
+      }
+
+      const fileName = `teachers_${Date.now()}.zip`;
+
+      if (Platform.OS === 'android') {
+        if (Number(Platform.Version) >= 29) {
+          await ReactNativeBlobUtil.MediaCollection.copyToMediaStore(
+            {
+              name: fileName,
+              parentFolder: '',
+              mimeType: 'application/zip',
+            },
+            'Download',
+            tempPath,
+          );
+
+          Alert.alert('Download Complete', `${fileName} saved in Downloads.`);
+        } else {
+          // Android 9 and below require legacy storage permission.
+          const destination = `${ReactNativeBlobUtil.fs.dirs.DownloadDir}/${fileName}`;
+
+          await ReactNativeBlobUtil.fs.cp(tempPath, destination);
+
+          Alert.alert('Download Complete', `Saved to ${destination}`);
+        }
+      } else {
+        throw new Error('iOS export requires a document-sharing flow.');
+      }
+    } catch (error) {
+      console.log('[TEACHERS ZIP DOWNLOAD ERROR]', {
+        message: error?.message,
+      });
+
+      Alert.alert(
+        'Download Failed',
+        error?.message || 'Unable to download teacher data.',
+      );
+    } finally {
+      if (tempPath) {
+        try {
+          await ReactNativeBlobUtil.fs.unlink(tempPath);
+        } catch (_) {}
+      }
+
+      setDownloadingTeachers(false);
+    }
+  };
+
   async function handleTeacherSecurity(teacher) {
     const userId = Number(teacher?.userId);
 
@@ -800,9 +1134,17 @@ export default function AdminTeachers({ navigation }) {
             </View>
 
             <View style={styles.teacherIdentity}>
-              <Text numberOfLines={2} style={styles.teacherName}>
-                {item.name}
-              </Text>
+              <View style={styles.teacherNameRow}>
+                <Text numberOfLines={2} style={styles.teacherName}>
+                  {item.name}
+                </Text>
+
+                {item.isDraft && (
+                  <View style={styles.draftBadge}>
+                    <Text style={styles.draftBadgeText}>DRAFT</Text>
+                  </View>
+                )}
+              </View>
 
               <Text numberOfLines={2} style={styles.teacherEmail}>
                 {item.email || '—'}
@@ -995,6 +1337,55 @@ export default function AdminTeachers({ navigation }) {
           </Pressable>
         </View>
       </View>
+
+      {canManage && (
+        <View style={styles.teacherBulkActions}>
+          <Pressable
+            onPress={handleDownloadTeachers}
+            disabled={downloadingTeachers}
+            style={[
+              styles.teacherBulkButton,
+              downloadingTeachers && styles.controlDisabled,
+            ]}
+          >
+            {downloadingTeachers ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <MaterialCommunityIcons
+                name="download"
+                size={18}
+                color="#FFFFFF"
+              />
+            )}
+
+            <Text style={styles.teacherBulkButtonText}>
+              {downloadingTeachers ? 'Downloading...' : 'Download Data'}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={handleGenerateCredentials}
+            disabled={
+              bulkCredentialsLoading || loading || teachers.length === 0
+            }
+            style={[
+              styles.teacherBulkButton,
+              (bulkCredentialsLoading || loading || teachers.length === 0) &&
+                styles.controlDisabled,
+            ]}
+          >
+            <MaterialCommunityIcons
+              name="account-key-outline"
+              size={18}
+              color="#FFFFFF"
+            />
+
+            <Text style={styles.teacherBulkButtonText}>
+              Generate Credentials
+            </Text>
+          </Pressable>
+        </View>
+      )}
 
       <View style={styles.searchCard}>
         <TextInput
@@ -1196,6 +1587,166 @@ export default function AdminTeachers({ navigation }) {
                   <Text style={styles.credentialsFooterButtonText}>
                     Send Email
                   </Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Bulk Teacher Credentials Modal */}
+      <Modal
+        visible={bulkCredentialsVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeBulkCredentialsModal}
+      >
+        <View style={styles.bulkModalOverlay}>
+          <View style={styles.bulkModalCard}>
+            {/* Header */}
+            <View style={styles.bulkModalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.bulkModalTitle}>
+                  Generate Teacher Credentials
+                </Text>
+                <Text style={styles.bulkModalSubtitle}>
+                  Review usernames and passwords before saving. Usernames are
+                  unique across every account type.
+                </Text>
+              </View>
+
+              <Pressable
+                onPress={closeBulkCredentialsModal}
+                disabled={bulkCredentialsLoading || bulkCredentialsSaving}
+                style={styles.bulkCloseButton}
+              >
+                <MaterialCommunityIcons
+                  name="close"
+                  size={22}
+                  color="#FFFFFF"
+                />
+              </Pressable>
+            </View>
+
+            {bulkCredentialsLoading ? (
+              <View style={styles.bulkLoading}>
+                <ActivityIndicator size="large" color="#7DD3FC" />
+                <Text style={styles.bulkModalSubtitle}>
+                  Generating credentials...
+                </Text>
+              </View>
+            ) : (
+              <ScrollView
+                style={styles.bulkModalScroll}
+                contentContainerStyle={styles.bulkModalContent}
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled
+              >
+                {bulkCredentialsRows.map(row => (
+                  <View
+                    key={String(row.user_id)}
+                    style={styles.bulkTeacherCard}
+                  >
+                    <Text style={styles.bulkTeacherName}>{row.name}</Text>
+
+                    <Text style={styles.bulkTeacherEmail}>
+                      {row.email || 'No email'}
+                    </Text>
+
+                    <Text
+                      style={
+                        row.has_existing_credentials
+                          ? styles.bulkExistingText
+                          : styles.bulkNewText
+                      }
+                    >
+                      {row.has_existing_credentials
+                        ? 'Replaces existing credentials'
+                        : 'New credentials'}
+                    </Text>
+
+                    <Text style={styles.bulkInputLabel}>Username</Text>
+
+                    <TextInput
+                      value={row.username}
+                      onChangeText={value =>
+                        updateBulkCredential(row.user_id, 'username', value)
+                      }
+                      editable={!bulkCredentialsSaving}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      style={styles.bulkInput}
+                    />
+
+                    <Text style={styles.bulkInputLabel}>Password</Text>
+
+                    <View style={styles.bulkPasswordRow}>
+                      <TextInput
+                        value={row.password}
+                        onChangeText={value =>
+                          updateBulkCredential(row.user_id, 'password', value)
+                        }
+                        editable={!bulkCredentialsSaving}
+                        secureTextEntry={!bulkPasswordVisible[row.user_id]}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        style={styles.bulkPasswordInput}
+                      />
+
+                      <Pressable
+                        onPress={() =>
+                          setBulkPasswordVisible(previous => ({
+                            ...previous,
+                            [row.user_id]: !previous[row.user_id],
+                          }))
+                        }
+                        style={styles.bulkEyeButton}
+                      >
+                        <MaterialCommunityIcons
+                          name={
+                            bulkPasswordVisible[row.user_id]
+                              ? 'eye-off-outline'
+                              : 'eye-outline'
+                          }
+                          size={19}
+                          color="#AFC0D8"
+                        />
+                      </Pressable>
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+
+            {/* Fixed Footer */}
+            <View style={styles.bulkModalFooter}>
+              <Pressable
+                onPress={closeBulkCredentialsModal}
+                disabled={bulkCredentialsLoading || bulkCredentialsSaving}
+                style={styles.bulkCancelButton}
+              >
+                <Text style={styles.bulkButtonText}>Close</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleSaveBulkCredentials}
+                disabled={
+                  bulkCredentialsLoading ||
+                  bulkCredentialsSaving ||
+                  bulkCredentialsRows.length === 0
+                }
+                style={[
+                  styles.bulkSaveButton,
+                  (bulkCredentialsLoading ||
+                    bulkCredentialsSaving ||
+                    bulkCredentialsRows.length === 0) &&
+                    styles.controlDisabled,
+                ]}
+              >
+                {bulkCredentialsSaving ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.bulkButtonText}>Save Credentials</Text>
                 )}
               </Pressable>
             </View>

@@ -1,6 +1,12 @@
 // src/screens/Admin/Attendance/AdminAttendance.js
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import {
   ActivityIndicator,
@@ -254,6 +260,10 @@ export default function AdminAttendance({ navigation }) {
 
   const [loadingTimeslots, setLoadingTimeslots] = useState(false);
 
+  const [timeslotConfig, setTimeslotConfig] = useState(null);
+
+  const timeslotRequestRef = useRef(0);
+
   const [classPickerVisible, setClassPickerVisible] = useState(false);
 
   const [coursePickerVisible, setCoursePickerVisible] = useState(false);
@@ -292,8 +302,14 @@ export default function AdminAttendance({ navigation }) {
     );
   }, [meta?.classes, selectedClassId]);
 
+  const hasCurrentTimeslotConfig =
+    timeslotConfig?.classGroupId === Number(selectedClassId) &&
+    timeslotConfig?.date === attendanceDate;
+
   const attendanceSessionMode = String(
-    meta?.tutorial_attendance_session_mode || '',
+    (hasCurrentTimeslotConfig ? timeslotConfig?.mode : null) ||
+      meta?.tutorial_attendance_session_mode ||
+      '',
   )
     .trim()
     .toLowerCase();
@@ -302,10 +318,16 @@ export default function AdminAttendance({ navigation }) {
 
   const isClassOnDemandMode = attendanceSessionMode === 'class_on_demand';
 
-  const isLectureAttendance =
-    String(selectedClass?.attendance_frequency || '')
-      .trim()
-      .toLowerCase() === 'once every lecture';
+  const attendanceFrequency = String(
+    (hasCurrentTimeslotConfig ? timeslotConfig?.frequency : null) ||
+      selectedClass?.attendance_frequency ||
+      meta?.attendance_frequency ||
+      '',
+  )
+    .trim()
+    .toLowerCase();
+
+  const isLectureAttendance = attendanceFrequency === 'once every lecture';
 
   const classOptions = useMemo(() => {
     return (Array.isArray(meta?.classes) ? meta.classes : []).map(item => ({
@@ -320,31 +342,73 @@ export default function AdminAttendance({ navigation }) {
       return [];
     }
 
+    const classId = Number(selectedClassId);
+
+    const courses = Array.isArray(meta?.courses) ? meta.courses : [];
+
     const onboardingSubjects = Array.isArray(onboarding?.subjects)
       ? onboarding.subjects
       : [];
 
-    const allowedCourseIds = new Set(
-      onboardingSubjects
-        .filter(
-          subject =>
-            Array.isArray(subject?.classes) &&
-            subject.classes.some(
-              classItem => Number(classItem?.id) === Number(selectedClassId),
-            ),
-        )
-        .map(subject => Number(subject.id)),
+    // Admin: use onboarding subject-to-class mapping
+    // when this mapping is available.
+    const mappedSubjects = onboardingSubjects.filter(subject =>
+      Array.isArray(subject?.classes),
     );
 
-    const courses = Array.isArray(meta?.courses) ? meta.courses : [];
+    if (mappedSubjects.length > 0) {
+      const allowedIds = new Set(
+        mappedSubjects
+          .filter(subject =>
+            subject.classes.some(cls => Number(cls?.id) === classId),
+          )
+          .map(subject => Number(subject.id)),
+      );
 
-    return courses
-      .filter(course => allowedCourseIds.has(Number(course.id)))
-      .map(course => ({
-        value: course.id,
-        label: course.label,
-        data: course,
-      }));
+      return courses
+        .filter(course => allowedIds.has(Number(course.id)))
+        .map(course => ({
+          value: Number(course.id),
+          label: course.label || course.title || `Subject ${course.id}`,
+          data: course,
+        }));
+    }
+
+    // Teacher: onboarding is not fetched.
+    // Prefer class mapping if it exists in attendance meta.
+    // Otherwise use the courses supplied by the attendance meta API.
+    const hasClassMappings = courses.some(
+      course =>
+        Array.isArray(course?.classes) ||
+        Array.isArray(course?.class_group_ids) ||
+        course?.class_group_id != null,
+    );
+
+    const availableCourses = hasClassMappings
+      ? courses.filter(course => {
+          if (Array.isArray(course?.classes)) {
+            return course.classes.some(
+              cls => Number(cls?.id ?? cls) === classId,
+            );
+          }
+
+          if (Array.isArray(course?.class_group_ids)) {
+            return course.class_group_ids.some(id => Number(id) === classId);
+          }
+
+          if (course?.class_group_id != null) {
+            return Number(course.class_group_id) === classId;
+          }
+
+          return false;
+        })
+      : courses;
+
+    return availableCourses.map(course => ({
+      value: Number(course.id),
+      label: course.label || course.title || `Subject ${course.id}`,
+      data: course,
+    }));
   }, [meta?.courses, onboarding?.subjects, selectedClassId]);
 
   const totalPages = useMemo(
@@ -397,9 +461,15 @@ export default function AdminAttendance({ navigation }) {
      * only show matching routine slots.
      */
     if (selectedCourseId) {
-      rows = rows.filter(
-        item => Number(item?.course_id) === Number(selectedCourseId),
-      );
+      rows = rows.filter(item => {
+        // Period-based slot without subject mapping:
+        // keep it visible.
+        if (item?.course_id == null) {
+          return true;
+        }
+
+        return Number(item.course_id) === Number(selectedCourseId);
+      });
     }
 
     return rows.map(item => ({
@@ -411,56 +481,99 @@ export default function AdminAttendance({ navigation }) {
     }));
   }, [timeslots, selectedCourseId]);
 
-  const loadTimeslots = useCallback(async () => {
+  useEffect(() => {
+    const requestId = ++timeslotRequestRef.current;
+
     if (
       !newSheetVisible ||
-      !selectedClassId ||
-      !attendanceDate ||
-      !isRoutineSlotsMode ||
-      !isLectureAttendance
+      !Number.isInteger(Number(selectedClassId)) ||
+      Number(selectedClassId) <= 0 ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(String(attendanceDate))
     ) {
       setTimeslots([]);
+      setTimeslotConfig(null);
       setSelectedTimeslotId(null);
+      setLoadingTimeslots(false);
       return;
     }
 
-    try {
-      setLoadingTimeslots(true);
+    const classId = Number(selectedClassId);
+    const date = attendanceDate;
 
-      setSelectedTimeslotId(null);
+    async function fetchTimeslots() {
+      try {
+        setLoadingTimeslots(true);
+        setTimeslots([]);
+        setTimeslotConfig(null);
+        setSelectedTimeslotId(null);
 
-      const response = await api(
-        `/api/attendance/timeslots?class_group_id=${encodeURIComponent(
-          selectedClassId,
-        )}&date=${encodeURIComponent(attendanceDate)}`,
-      );
+        const url =
+          `/api/attendance/timeslots` +
+          `?class_group_id=${encodeURIComponent(classId)}` +
+          `&date=${encodeURIComponent(date)}`;
 
-      const rows = Array.isArray(response?.timeslots) ? response.timeslots : [];
+        console.log('[ATTENDANCE TIMESLOTS REQUEST]', url);
 
-      setTimeslots(rows);
-    } catch (error) {
-      console.log('Attendance timeslots error:', error);
+        const response = await api(url);
 
-      setTimeslots([]);
+        if (requestId !== timeslotRequestRef.current) {
+          return;
+        }
 
-      Alert.alert(
-        'Timeslots',
-        error?.message || 'Could not load routine timeslots.',
-      );
-    } finally {
-      setLoadingTimeslots(false);
+        if (
+          response?.class_group_id != null &&
+          Number(response.class_group_id) !== classId
+        ) {
+          throw new Error('Timeslot class mismatch.');
+        }
+
+        if (response?.date && response.date !== date) {
+          throw new Error('Timeslot date mismatch.');
+        }
+
+        const rows = Array.isArray(response?.timeslots)
+          ? [...response.timeslots].sort(
+              (a, b) =>
+                Number(a.period_order || 0) - Number(b.period_order || 0),
+            )
+          : [];
+
+        setTimeslots(rows);
+
+        setTimeslotConfig({
+          classGroupId: classId,
+          date,
+          frequency: response?.attendance_frequency || '',
+          mode: response?.tutorial_attendance_session_mode || '',
+        });
+
+        console.log('[ATTENDANCE TIMESLOTS RESPONSE]', {
+          classId,
+          date,
+          count: rows.length,
+          mode: response?.tutorial_attendance_session_mode,
+          frequency: response?.attendance_frequency,
+        });
+      } catch (error) {
+        if (requestId !== timeslotRequestRef.current) {
+          return;
+        }
+
+        console.log('[ATTENDANCE TIMESLOTS ERROR]', error);
+
+        setTimeslots([]);
+        setTimeslotConfig(null);
+
+        Alert.alert('Timeslots', error?.message || 'Could not load timeslots.');
+      } finally {
+        if (requestId === timeslotRequestRef.current) {
+          setLoadingTimeslots(false);
+        }
+      }
     }
-  }, [
-    newSheetVisible,
-    selectedClassId,
-    attendanceDate,
-    isRoutineSlotsMode,
-    isLectureAttendance,
-  ]);
 
-  useEffect(() => {
-    loadTimeslots();
-  }, [loadTimeslots]);
+    fetchTimeslots();
+  }, [newSheetVisible, selectedClassId, attendanceDate]);
 
   const loadAttendance = useCallback(
     async ({ refresh = false } = {}) => {
@@ -686,6 +799,7 @@ export default function AdminAttendance({ navigation }) {
      * previously selected routine slot.
      */
     setSelectedTimeslotId(null);
+    setTimeslotConfig(null);
 
     setCalendarVisible(false);
   }, []);
@@ -740,6 +854,7 @@ export default function AdminAttendance({ navigation }) {
     setSelectedTimeslotId(null);
 
     setTimeslots([]);
+    setTimeslotConfig(null);
 
     setAttendanceDate(today);
 
@@ -756,6 +871,7 @@ export default function AdminAttendance({ navigation }) {
     setSelectedTimeslotId(null);
 
     setTimeslots([]);
+    setTimeslotConfig(null);
   }, []);
 
   const handleClassSelect = useCallback(option => {
@@ -769,6 +885,7 @@ export default function AdminAttendance({ navigation }) {
     setSelectedTimeslotId(null);
 
     setTimeslots([]);
+    setTimeslotConfig(null);
   }, []);
 
   const handleCourseSelect = useCallback(option => {
@@ -795,66 +912,80 @@ export default function AdminAttendance({ navigation }) {
         .trim()
         .toLowerCase();
 
-      /*
-       * Daily attendance uses a date-based sheet,
-       * not a numeric attendance session ID.
-       */
-      if (sessionType === 'daily') {
-        const sheetDate = String(session?.sheet_date || '').trim();
+      const sessionKey = String(session?.id || '');
+      const sheetDate = String(session?.sheet_date || '');
 
+      // Daily attendance
+      if (sessionType === 'daily') {
         const classGroupId = Number(
           session?.class_group_id ?? session?.class_group_ids?.[0],
         );
 
-        if (!sheetDate) {
-          Alert.alert('Attendance', 'A valid attendance date is required.');
-
-          return;
-        }
-
-        if (!Number.isFinite(classGroupId)) {
-          Alert.alert(
-            'Attendance',
-            'A valid class is required for daily attendance.',
-          );
-
+        if (
+          !/^\d{4}-\d{2}-\d{2}$/.test(sheetDate) ||
+          !Number.isInteger(classGroupId) ||
+          classGroupId <= 0
+        ) {
+          Alert.alert('Attendance', 'Invalid daily attendance information.');
           return;
         }
 
         navigation.navigate('AdminMarkAttendance', {
-          sessionId: session?.id,
-
+          sessionId: sessionKey,
           sessionType: 'daily',
-
           sheetDate,
-
           classGroupId,
-
           initialTab: 'manual',
-
           source: 'session_list',
         });
 
         return;
       }
 
-      /*
-       * Lecture attendance uses a numeric session ID.
-       */
-      const sessionId = Number(session?.id);
+      // Tutorial attendance: ID example tutorial:2026-09-24:12
+      if (sessionType === 'tutorial') {
+        const match = sessionKey.match(/^tutorial:(\d{4}-\d{2}-\d{2}):(\d+)$/);
 
-      if (!Number.isFinite(sessionId)) {
-        Alert.alert('Attendance', 'A valid attendance session is required.');
+        if (!match) {
+          Alert.alert('Attendance', 'Invalid tutorial attendance information.');
+          return;
+        }
+
+        const tutorialDate = match[1];
+        const tutorialSheetId = Number(match[2]);
+
+        navigation.navigate('AdminMarkAttendance', {
+          sessionId: sessionKey,
+          sessionType: 'tutorial',
+          sheetDate: tutorialDate,
+          tutorialSheetId,
+          initialTab: 'manual',
+          source: 'session_list',
+        });
 
         return;
       }
 
-      navigation.navigate('AdminMarkAttendance', {
-        sessionId,
-        sessionType: 'lecture',
-        initialTab: 'qr',
-        source: 'session_list',
-      });
+      // Regular lecture attendance
+      if (sessionType === 'lecture') {
+        const sessionId = Number(session?.id);
+
+        if (!Number.isInteger(sessionId) || sessionId <= 0) {
+          Alert.alert('Attendance', 'A valid attendance session is required.');
+          return;
+        }
+
+        navigation.navigate('AdminMarkAttendance', {
+          sessionId,
+          sessionType: 'lecture',
+          initialTab: 'qr',
+          source: 'session_list',
+        });
+
+        return;
+      }
+
+      Alert.alert('Attendance', 'Unsupported attendance session type.');
     },
     [navigation],
   );
@@ -862,32 +993,28 @@ export default function AdminAttendance({ navigation }) {
   const handleTodayTimelinePress = useCallback(
     async slot => {
       const slotKey = String(slot?.key || '').trim();
-
       const classGroupId = Number(slot?.class_group_id);
-
       const courseId = Number(slot?.course_id);
-
       const timeslotId = Number(slot?.timeslot_id);
-
       const sheetDate = String(todayTimetable?.date || '').trim();
 
-      if (!slotKey || !Number.isFinite(classGroupId) || !sheetDate) {
+      if (
+        !slotKey ||
+        !Number.isInteger(classGroupId) ||
+        classGroupId <= 0 ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(sheetDate)
+      ) {
         Alert.alert(
           'Attendance',
-          'This timetable slot does not contain enough information to open attendance.',
+          'This timetable slot does not contain enough information.',
         );
-
         return;
       }
 
-      if (openingTimelineKey) {
+      if (openingTimelineKey !== null) {
         return;
       }
 
-      /*
-       * Find the attendance frequency
-       * configured for this class.
-       */
       const classMeta =
         (Array.isArray(meta?.classes) ? meta.classes : []).find(
           item => Number(item?.id) === classGroupId,
@@ -904,77 +1031,92 @@ export default function AdminAttendance({ navigation }) {
       try {
         setOpeningTimelineKey(slotKey);
 
-        /*
-         * DAILY ATTENDANCE
-         *
-         * Do not create a lecture session.
-         * AdminMarkAttendance will load:
-         *
-         * GET /api/attendance/daily-sheets/{date}
-         *     ?class_group_id={classGroupId}
-         */
+        // DAILY ATTENDANCE
         if (isDailyAttendance) {
           navigation.navigate('AdminMarkAttendance', {
             sessionId: `daily:${sheetDate}:${classGroupId}`,
-
             sessionType: 'daily',
-
             sheetDate,
-
             classGroupId,
-
             initialTab: 'manual',
-
             source: 'today_timeline',
           });
-
           return;
         }
 
-        /*
-         * LECTURE ATTENDANCE
-         */
-        if (!Number.isFinite(courseId) || !Number.isFinite(timeslotId)) {
+        if (
+          !Number.isInteger(courseId) ||
+          courseId <= 0 ||
+          !Number.isInteger(timeslotId) ||
+          timeslotId <= 0
+        ) {
           throw new Error('Course or timeslot information is missing.');
         }
 
         const payload = {
           class_group_id: classGroupId,
-
           course_id: courseId,
-
           sheet_date: sheetDate,
-
           timeslot_id: timeslotId,
-
           timetable_slot_key: slotKey,
         };
 
         const response = await api('/api/attendance/sessions', {
           method: 'POST',
-
           body: JSON.stringify(payload),
         });
 
-        const sessionId = Number(response?.id);
+        const sessionId = String(response?.id ?? '').trim();
+        const responseType = String(response?.session_type || '')
+          .trim()
+          .toLowerCase();
 
-        if (!Number.isFinite(sessionId)) {
+        if (!sessionId) {
           throw new Error('Attendance session ID was not returned.');
         }
 
-        await loadSessions({
+        let navigationParams;
+
+        // TUTORIAL ATTENDANCE
+        if (responseType === 'tutorial' || sessionId.startsWith('tutorial:')) {
+          const match = sessionId.match(/^tutorial:(\d{4}-\d{2}-\d{2}):(\d+)$/);
+
+          if (!match) {
+            throw new Error('Invalid tutorial attendance session ID.');
+          }
+
+          navigationParams = {
+            sessionId,
+            sessionType: 'tutorial',
+            sheetDate: match[1],
+            tutorialSheetId: Number(match[2]),
+            initialTab: 'manual',
+            source: 'today_timeline',
+          };
+        } else {
+          // REGULAR LECTURE ATTENDANCE
+          const numericSessionId = Number(sessionId);
+
+          if (!Number.isInteger(numericSessionId) || numericSessionId <= 0) {
+            throw new Error('Invalid lecture attendance session ID.');
+          }
+
+          navigationParams = {
+            sessionId: numericSessionId,
+            sessionType: 'lecture',
+            initialTab: 'manual',
+            source: 'today_timeline',
+          };
+        }
+
+        // Open attendance even if refreshing the session list fails.
+        navigation.navigate('AdminMarkAttendance', navigationParams);
+
+        loadSessions({
           requestedPage: 1,
           append: false,
-        });
-
-        navigation.navigate('AdminMarkAttendance', {
-          sessionId,
-
-          sessionType: 'lecture',
-
-          initialTab: 'manual',
-
-          source: 'today_timeline',
+        }).catch(error => {
+          console.log('Refresh attendance sessions error:', error);
         });
       } catch (error) {
         console.log('Open timetable attendance error:', error);
@@ -1407,7 +1549,7 @@ export default function AdminAttendance({ navigation }) {
                 <Text style={styles.modalLabel}>Timeslot from routine</Text>
 
                 <Pressable
-                  disabled={loadingTimeslots}
+                  disabled={loadingTimeslots || timeslotOptions.length === 0}
                   onPress={() => setTimeslotPickerVisible(true)}
                   style={[
                     styles.modalSelect,

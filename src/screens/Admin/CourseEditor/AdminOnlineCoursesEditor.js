@@ -628,6 +628,18 @@ export default function AdminOnlineCoursesEditor({ route }) {
               </Text>
             </Pressable>
 
+            {/* Reorder Online Courses */}
+            <Pressable
+              onPress={() => navigation.navigate('AdminReorderOnlineCourses')}
+              accessibilityRole="button"
+              style={({ pressed }) => [
+                styles.reorderButton,
+                pressed && styles.refreshButtonPressed,
+              ]}
+            >
+              <Text style={styles.reorderButtonText}>Reorder</Text>
+            </Pressable>
+
             {/* Settings - Icon Only */}
 
             <Pressable

@@ -267,12 +267,18 @@ export default function AdminOnlineCourseDetailsEditor({ route, navigation }) {
     }));
   }, [course]);
 
-  function updateField(fieldName, value) {
-    setForm(previousForm => ({
-      ...previousForm,
-      [fieldName]: value,
-    }));
-  }
+  const updateField = useCallback((fieldName, value) => {
+    setForm(previousForm => {
+      if (previousForm[fieldName] === value) {
+        return previousForm;
+      }
+
+      return {
+        ...previousForm,
+        [fieldName]: value,
+      };
+    });
+  }, []);
 
   const handleChaptersChange = useCallback(updatedChapters => {
     setCourse(previousCourse => {
@@ -351,27 +357,25 @@ export default function AdminOnlineCourseDetailsEditor({ route, navigation }) {
   }
 
   async function handleSave() {
-    if (savingCourse) {
+    if (savingCourse || !courseId) {
       return;
     }
 
     const cleanTitle = form.title.trim();
-
     const cleanDescription = form.description.trim();
-
-    const cleanCurrency = form.currency.trim() || '₹';
-
     const numericPrice = Number(form.price);
 
     if (!cleanTitle) {
       Alert.alert('Invalid Course', 'Course title is required.');
-
       return;
     }
 
-    if (!Number.isFinite(numericPrice) || numericPrice < 0) {
+    if (
+      !form.price.trim() ||
+      !Number.isFinite(numericPrice) ||
+      numericPrice < 0
+    ) {
       Alert.alert('Invalid Price', 'Please enter a valid course price.');
-
       return;
     }
 
@@ -381,134 +385,101 @@ export default function AdminOnlineCourseDetailsEditor({ route, navigation }) {
       selectedSubjectIds,
       attachedSubjectIds,
     );
-    const newSubjectIds = selectedSubjectIds.filter(
-      subjectId => !attachedSubjectIds.includes(subjectId),
-    );
 
     const payload = {
       title: cleanTitle,
       description: cleanDescription,
       price: numericPrice,
-      currency: cleanCurrency,
     };
+
+    let detailsSaved = false;
 
     try {
       setSavingCourse(true);
 
-      console.log('Course update payload:', payload);
+      console.log('[COURSE UPDATE PAYLOAD]', payload);
 
+      // API 1: Update course details
       const response = await api(`/api/ott/ottcourses/${courseId}`, {
         method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(payload),
       });
 
-      /*
-       * Preserve chapters, images, categories, tags and class groups
-       * because the update response contains only main course fields.
-       */
+      if (!response?.id) {
+        throw new Error('Course update could not be confirmed.');
+      }
+
+      detailsSaved = true;
+
       setCourse(previousCourse => ({
         ...(previousCourse || {}),
-        ...(response || {}),
+        ...response,
       }));
 
-      setForm(previousForm => ({
-        ...previousForm,
-
-        title: String(response?.title ?? cleanTitle),
-
-        description: String(response?.description ?? cleanDescription),
-
-        price: convertMinorToPrice(
-          response?.price_minor ?? Math.round(numericPrice * 100),
-        ),
-
-        currency: String(response?.currency ?? cleanCurrency),
-
-        selectedSubjectIds,
-      }));
-
+      // API 2: Sync subjects only when changed
       if (subjectsChanged) {
-        try {
-          const subjectPayload = {
-            course_ids: selectedSubjectIds,
-          };
+        const subjectPayload = {
+          course_ids: selectedSubjectIds,
+        };
 
-          console.log('Subject sync payload:', subjectPayload);
+        console.log('[COURSE SUBJECT PAYLOAD]', subjectPayload);
 
-          const subjectResponse = await api(
-            `/api/ott/ottcourses/${courseId}/subjects`,
-            {
-              method: 'POST',
-              body: JSON.stringify(subjectPayload),
+        const subjectResponse = await api(
+          `/api/ott/ottcourses/${courseId}/subjects`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
             },
-          );
+            body: JSON.stringify(subjectPayload),
+          },
+        );
 
-          const responseSubjects = Array.isArray(subjectResponse?.courses)
-            ? subjectResponse.courses
-            : [];
-
-          /*
-           * Use subject options as a fallback if the API
-           * does not return the final courses array.
-           */
-          const locallySelectedSubjects = selectedSubjectIds
-            .map(subjectId =>
-              subjectOptions.find(subject => Number(subject?.id) === subjectId),
-            )
-            .filter(Boolean);
-
-          const finalSubjects =
-            responseSubjects.length > 0
-              ? responseSubjects
-              : locallySelectedSubjects;
-
-          const finalSubjectIds =
-            responseSubjects.length > 0
-              ? normalizeSubjectIds(
-                  responseSubjects.map(subject => subject?.id),
-                )
-              : selectedSubjectIds;
-
-          setCourse(previousCourse => ({
-            ...(previousCourse || {}),
-            courses: finalSubjects,
-          }));
-
-          setAttachedSubjectIds(finalSubjectIds);
-
-          setForm(previousForm => ({
-            ...previousForm,
-            subjectIds: finalSubjectIds,
-            selectedSubjectIds: finalSubjectIds,
-          }));
-        } catch (subjectError) {
-          console.log('Subject sync API error:', subjectError);
-
-          Alert.alert(
-            'Course Updated',
-            subjectsChanged
-              ? 'Course details and subjects were updated successfully.'
-              : 'Course details were updated successfully.',
-          );
-
-          return;
+        if (!subjectResponse || !Array.isArray(subjectResponse.courses)) {
+          throw new Error('Subject update could not be confirmed.');
         }
+
+        setAttachedSubjectIds(
+          normalizeSubjectIds(
+            subjectResponse.courses.map(subject => subject.id),
+          ),
+        );
       }
+
+      // API 3: Reload complete course details
+      const updatedCourse = await api(`/api/ott/ottcourses/${courseId}`, {
+        method: 'GET',
+      });
+
+      if (!updatedCourse?.id) {
+        throw new Error('Could not reload updated course details.');
+      }
+
+      populateForm(updatedCourse);
 
       Alert.alert(
         'Course Updated',
-
-        newSubjectIds.length > 0
+        subjectsChanged
           ? 'Course details and subjects were updated successfully.'
           : 'Course details were updated successfully.',
       );
     } catch (error) {
-      console.log('Course update API error:', error);
+      console.log('[COURSE SAVE ERROR]', {
+        message: error?.message,
+        status: error?.status,
+        payload: error?.payload,
+      });
 
       Alert.alert(
-        'Could not update course',
-
-        error?.message || 'The course details could not be updated.',
+        detailsSaved ? 'Course Partially Updated' : 'Could not update course',
+        detailsSaved
+          ? `Course details were saved, but a subsequent operation failed: ${
+              error?.message || 'Unknown error'
+            }. Refresh the page to verify the saved changes.`
+          : error?.message || 'The course details could not be updated.',
       );
     } finally {
       setSavingCourse(false);

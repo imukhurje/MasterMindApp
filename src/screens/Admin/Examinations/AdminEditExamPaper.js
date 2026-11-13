@@ -28,7 +28,15 @@ function normalizeTeacher(item) {
 function normalizeClass(item) {
   return {
     id: Number(item?.id),
+
     name: String(item?.name || 'Unnamed class'),
+
+    className: String(item?.class_name || item?.name || 'Unnamed class'),
+
+    section: item?.section == null ? '' : String(item.section),
+
+    classLevelId:
+      item?.class_level_id == null ? null : Number(item.class_level_id),
   };
 }
 
@@ -183,6 +191,26 @@ export default function AdminEditExamPaper({ route, navigation }) {
       : null,
   );
 
+  const initialSectionIds = [
+    ...new Set(
+      (Array.isArray(exam?.class_group_ids) && exam.class_group_ids.length > 0
+        ? exam.class_group_ids
+        : Array.isArray(exam?.class_groups) && exam.class_groups.length > 0
+        ? exam.class_groups.map(item => item.id)
+        : [exam?.class_group_id]
+      )
+        .map(Number)
+        .filter(id => Number.isInteger(id) && id > 0),
+    ),
+  ];
+
+  const [selectedClassLevelKey, setSelectedClassLevelKey] = useState(null);
+
+  const [selectedSectionIds, setSelectedSectionIds] =
+    useState(initialSectionIds);
+
+  const [existingCombos, setExistingCombos] = useState([]);
+
   const [isOnline, setIsOnline] = useState(exam?.is_online !== false);
 
   const [teacherModalVisible, setTeacherModalVisible] = useState(false);
@@ -232,10 +260,50 @@ export default function AdminEditExamPaper({ route, navigation }) {
     [courses],
   );
 
+  const groupedClasses = useMemo(() => {
+    const groups = new Map();
+
+    classes.forEach(item => {
+      const key =
+        item.classLevelId != null
+          ? `level:${item.classLevelId}`
+          : `name:${item.className.trim().toLowerCase()}`;
+
+      if (!groups.has(key)) {
+        groups.set(key, {
+          key,
+          label: item.className,
+          sections: [],
+        });
+      }
+
+      groups.get(key).sections.push({
+        id: item.id,
+        label: item.section || 'No section',
+        name: item.name,
+      });
+    });
+
+    return Array.from(groups.values());
+  }, [classes]);
+
   const classOptions = useMemo(
-    () => classes.map(item => ({ value: item.id, label: item.name })),
-    [classes],
+    () =>
+      groupedClasses.map(group => ({
+        value: group.key,
+        label: group.label,
+      })),
+    [groupedClasses],
   );
+
+  const selectedClassGroup = useMemo(
+    () =>
+      groupedClasses.find(group => group.key === selectedClassLevelKey) || null,
+    [groupedClasses, selectedClassLevelKey],
+  );
+
+  const selectedClassLabel =
+    selectedClassGroup?.label || exam?.class_name || 'Select...';
 
   const selectedTeacherLabel = useMemo(() => {
     const teacher = teachers.find(item => item.id === selectedTeacherId);
@@ -259,14 +327,6 @@ export default function AdminEditExamPaper({ route, navigation }) {
       exam?.course_title ||
       'Select...',
     [courses, exam?.course_title, selectedCourseId],
-  );
-
-  const selectedClassLabel = useMemo(
-    () =>
-      classes.find(item => item.id === selectedClassId)?.name ||
-      exam?.class_name ||
-      'Select...',
-    [classes, exam?.class_name, selectedClassId],
   );
 
   const totalMarksNumber = useMemo(() => {
@@ -385,6 +445,26 @@ export default function AdminEditExamPaper({ route, navigation }) {
   );
 
   useEffect(() => {
+    if (classes.length === 0) return;
+
+    const firstSelectedId = selectedSectionIds[0];
+
+    if (!firstSelectedId) {
+      setSelectedClassLevelKey(null);
+      setSelectedClassId(null);
+      return;
+    }
+
+    const matchingGroup = groupedClasses.find(group =>
+      group.sections.some(section => section.id === firstSelectedId),
+    );
+
+    setSelectedClassLevelKey(matchingGroup?.key || null);
+
+    setSelectedClassId(firstSelectedId);
+  }, [classes, groupedClasses]);
+
+  useEffect(() => {
     let active = true;
 
     async function loadInitialData() {
@@ -398,12 +478,30 @@ export default function AdminEditExamPaper({ route, navigation }) {
       try {
         setLoading(true);
 
-        const [examinationsResponse, extrasResponse, resourcesResponse] =
-          await Promise.all([
-            api('/api/examinations/v1/options'),
-            api(`/api/exams/${examId}/extras`),
-            api(`/api/exams/resources-for-teacher/${initialTeacherId}`),
-          ]);
+        const examinationId = Number(exam?.examination_id);
+
+        const [
+          examinationsResponse,
+          extrasResponse,
+          resourcesResponse,
+          combosResponse,
+        ] = await Promise.all([
+          api('/api/examinations/v1/options'),
+
+          api(`/api/exams/${examId}/extras`),
+
+          api(`/api/exams/resources-for-teacher/${initialTeacherId}`),
+
+          Number.isInteger(examinationId) && examinationId > 0
+            ? api(`/api/examinations/v1/${examinationId}/combos`)
+            : Promise.resolve({ combos: [] }),
+        ]);
+
+        if (!active) return;
+
+        setExistingCombos(
+          Array.isArray(combosResponse?.combos) ? combosResponse.combos : [],
+        );
 
         if (!active) {
           return;
@@ -491,13 +589,22 @@ export default function AdminEditExamPaper({ route, navigation }) {
     const nextTeacherId = Number(value);
 
     if (
-      !Number.isFinite(nextTeacherId) ||
+      !Number.isInteger(nextTeacherId) ||
+      nextTeacherId <= 0 ||
       nextTeacherId === selectedTeacherId
     ) {
       return;
     }
 
     setSelectedTeacherId(nextTeacherId);
+
+    setSelectedClassId(null);
+    setSelectedClassLevelKey(null);
+    setSelectedSectionIds([]);
+
+    setTemplates([]);
+    setSelectedTemplateId(null);
+
     await loadTeacherResources(nextTeacherId);
   }
 
@@ -516,27 +623,47 @@ export default function AdminEditExamPaper({ route, navigation }) {
      */
     setSelectedClassId(null);
 
+    setSelectedClassLevelKey(null);
+    setSelectedSectionIds([]);
+
     setTemplates([]);
     setSelectedTemplateId(null);
   }
 
-  async function changeClass(value) {
-    const nextClassId = Number(value);
-
-    if (!Number.isFinite(nextClassId)) {
-      return;
-    }
-
+  function changeClass(classLevelKey) {
     if (!selectedCourseId) {
       Alert.alert('Course required', 'Please select a course first.');
       return;
     }
 
-    setSelectedClassId(nextClassId);
+    setSelectedClassLevelKey(classLevelKey);
+    setSelectedSectionIds([]);
+    setSelectedClassId(null);
 
-    await loadTemplates(nextClassId, selectedCourseId, {
-      openModal: true,
-    });
+    setTemplates([]);
+    setSelectedTemplateId(null);
+  }
+
+  async function toggleSection(classGroupId) {
+    const id = Number(classGroupId);
+
+    if (!Number.isInteger(id) || id <= 0) return;
+
+    const nextIds = selectedSectionIds.includes(id)
+      ? selectedSectionIds.filter(item => item !== id)
+      : [...selectedSectionIds, id];
+
+    setSelectedSectionIds(nextIds);
+
+    setSelectedClassId(nextIds.length > 0 ? nextIds[0] : null);
+
+    setTemplates([]);
+    setSelectedTemplateId(null);
+
+    // Existing template picker works with one class_group_id.
+    if (nextIds.length === 1 && selectedCourseId) {
+      await loadTemplates(nextIds[0], selectedCourseId, { openModal: true });
+    }
   }
 
   function addAdditionalItem() {
@@ -574,8 +701,11 @@ export default function AdminEditExamPaper({ route, navigation }) {
       return;
     }
 
-    if (!selectedClassId) {
-      Alert.alert('Class required', 'Please select a class first.');
+    if (selectedSectionIds.length !== 1) {
+      Alert.alert(
+        'Select One Section',
+        'Please select exactly one section to save a template.',
+      );
       return;
     }
 
@@ -735,8 +865,11 @@ export default function AdminEditExamPaper({ route, navigation }) {
       return;
     }
 
-    if (!selectedClassId) {
-      Alert.alert('Class required', 'Please select a class.');
+    if (!selectedClassLevelKey || selectedSectionIds.length === 0) {
+      Alert.alert(
+        'Sections required',
+        'Please select a class and at least one section.',
+      );
       return;
     }
 
@@ -775,15 +908,28 @@ export default function AdminEditExamPaper({ route, navigation }) {
       ? new Date(exam.ends_at).toISOString()
       : startsAt;
 
+    const classGroupIds = [...new Set(selectedSectionIds.map(Number))];
+
     const payload = {
-      class_group_id: selectedClassId,
-      course_id: selectedCourseId,
+      class_group_id: classGroupIds[0],
+      class_group_ids: classGroupIds,
+
+      course_id: Number(selectedCourseId),
+
       ends_at: endsAt,
+
       examination_id: selectedExaminationId || null,
+
       is_online: isOnline,
+
       starts_at: startsAt,
+
       total_marks: totalMarksNumber,
-      teacher_id: selectedTeacherId,
+
+      teacher_id: Number(selectedTeacherId),
+
+      // Preserve the existing edit API field until
+      // the PUT contract is confirmed.
       extra_items: extraItems,
     };
 
@@ -925,6 +1071,53 @@ export default function AdminEditExamPaper({ route, navigation }) {
             <Text style={styles.selectArrow}>⌄</Text>
           )}
         </Pressable>
+
+        {/* Sections Multi Select */}
+        {selectedClassGroup && (
+          <View style={styles.sectionsContainer}>
+            <Text style={styles.fieldLabel}>
+              Sections (select one or more) *
+            </Text>
+
+            <View style={styles.sectionsRow}>
+              {selectedClassGroup.sections.map(section => {
+                const selected = selectedSectionIds.includes(section.id);
+
+                return (
+                  <Pressable
+                    key={String(section.id)}
+                    onPress={() => toggleSection(section.id)}
+                    disabled={saving || resourcesLoading}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{
+                      checked: selected,
+                    }}
+                    style={({ pressed }) => [
+                      styles.sectionChip,
+                      selected && styles.sectionChipSelected,
+                      pressed && styles.controlPressed,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.sectionChipText,
+                        selected && styles.sectionChipTextSelected,
+                      ]}
+                    >
+                      {section.label}
+                    </Text>
+
+                    {selected && <Text style={styles.sectionCheckIcon}>✓</Text>}
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <Text style={styles.sectionHelper}>
+              {selectedSectionIds.length} section(s) selected
+            </Text>
+          </View>
+        )}
 
         <Text style={styles.fieldLabel}>Delivery</Text>
         <Pressable
@@ -1104,7 +1297,7 @@ export default function AdminEditExamPaper({ route, navigation }) {
         visible={classModalVisible}
         title="Class"
         options={classOptions}
-        selectedValue={selectedClassId}
+        selectedValue={selectedClassLevelKey}
         onSelect={changeClass}
         onClose={() => setClassModalVisible(false)}
         loading={resourcesLoading}

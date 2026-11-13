@@ -740,4 +740,111 @@ export default StyleSheet.create({
     fontSize: 10,
     fontStyle: 'italic',
   },
+
+  tutorialAdminDayCard: {
+    backgroundColor: '#102742',
+    borderWidth: 1,
+    borderColor: '#376D99',
+    borderRadius: 14,
+    padding: 10,
+  },
+
+  tutorialAdminDaySlots: {
+    gap: 8,
+  },
+
+  tutorialAdminSlotCard: {
+    backgroundColor: '#142B49',
+    borderWidth: 1,
+    borderColor: '#4E92C7',
+    borderRadius: 13,
+    paddingHorizontal: 11,
+    paddingVertical: 11,
+  },
+
+  tutorialAdminSlotTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+
+  tutorialAdminSlotInfo: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+
+  tutorialAdminSlotTitle: {
+    color: '#F8FAFC',
+    fontSize: 12,
+    fontWeight: '900',
+    lineHeight: 18,
+  },
+
+  tutorialAdminSlotMeta: {
+    color: '#AFC0D8',
+    fontSize: 11,
+    lineHeight: 16,
+  },
+
+  tutorialAdminSlotClasses: {
+    color: '#93C5FD',
+    fontSize: 10,
+    lineHeight: 15,
+  },
+
+  tutorialAdminSlotActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+
+  tutorialAdminIconButton: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 9,
+    backgroundColor: '#2563EB',
+  },
+
+  tutorialAdminIconText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+  },
+
+  slotSelectedChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+    marginTop: 8,
+    marginBottom: 5,
+  },
+
+  slotSelectedChip: {
+    minHeight: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    backgroundColor: '#1E3A66',
+  },
+
+  slotSelectedChipText: {
+    color: '#E2E8F0',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+
+  slotSelectedChipRemove: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    lineHeight: 16,
+    fontWeight: '700',
+  },
 });

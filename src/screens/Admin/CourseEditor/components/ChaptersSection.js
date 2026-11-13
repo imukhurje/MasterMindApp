@@ -767,7 +767,7 @@ export default function ChaptersSection({
         containerStyle={styles.dragListContainer}
         style={styles.list}
         contentContainerStyle={styles.listContent}
-        ListHeaderComponent={renderListHeader}
+        ListHeaderComponent={renderListHeader()}
         ListEmptyComponent={renderEmptyComponent}
         ListFooterComponent={renderFooter}
         keyboardShouldPersistTaps="handled"

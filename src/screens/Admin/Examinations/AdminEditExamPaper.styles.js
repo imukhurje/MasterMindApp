@@ -454,4 +454,59 @@ export default StyleSheet.create({
     color: TEXT,
     fontSize: 12,
   },
+
+  sectionsContainer: {
+    marginTop: 12,
+    marginBottom: 8,
+  },
+
+  sectionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 9,
+    marginTop: 6,
+  },
+
+  sectionChip: {
+    minWidth: 42,
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    borderRadius: 22,
+    backgroundColor: '#0B1C32',
+  },
+
+  sectionChipSelected: {
+    borderColor: '#60A5FA',
+    backgroundColor: '#2563EB',
+  },
+
+  sectionChipText: {
+    color: '#AFC0D8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  sectionChipTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+  },
+
+  sectionCheckIcon: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+
+  sectionHelper: {
+    color: '#AFC0D8',
+    fontSize: 10,
+    marginTop: 7,
+  },
 });

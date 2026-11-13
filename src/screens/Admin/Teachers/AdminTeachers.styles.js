@@ -848,4 +848,232 @@ export default StyleSheet.create({
     fontSize: 12,
     fontWeight: '900',
   },
+
+  teacherBulkActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+
+  teacherBulkButton: {
+    flexGrow: 1,
+    minHeight: 44,
+    paddingHorizontal: 10,
+    backgroundColor: '#142B49',
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+
+  teacherBulkButtonText: {
+    color: '#F8FAFC',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  bulkModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(2,6,23,0.82)',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 20,
+  },
+
+  bulkModalCard: {
+    width: '100%',
+    maxHeight: '92%',
+    backgroundColor: '#0B162B',
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    borderRadius: 15,
+    overflow: 'hidden',
+  },
+
+  bulkModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: 14,
+    backgroundColor: '#101F39',
+  },
+
+  bulkModalTitle: {
+    color: '#F8FAFC',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+
+  bulkModalSubtitle: {
+    color: '#AFC0D8',
+    fontSize: 11,
+    lineHeight: 18,
+    marginTop: 5,
+  },
+
+  bulkCloseButton: {
+    width: 36,
+    height: 36,
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    backgroundColor: '#142B49',
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  bulkLoading: {
+    minHeight: 160,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+
+  bulkModalScroll: {
+    flexShrink: 1,
+  },
+
+  bulkModalContent: {
+    padding: 12,
+    paddingBottom: 20,
+    gap: 12,
+  },
+
+  bulkTeacherCard: {
+    backgroundColor: '#142B49',
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    borderRadius: 12,
+    padding: 12,
+    gap: 8,
+  },
+
+  bulkTeacherName: {
+    color: '#F8FAFC',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+
+  bulkTeacherEmail: {
+    color: '#AFC0D8',
+    fontSize: 11,
+  },
+
+  bulkExistingText: {
+    color: '#FBBF24',
+    fontSize: 11,
+  },
+
+  bulkNewText: {
+    color: '#86EFAC',
+    fontSize: 11,
+  },
+
+  bulkInputLabel: {
+    color: '#AFC0D8',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 5,
+  },
+
+  bulkInput: {
+    minHeight: 44,
+    backgroundColor: '#0B1C32',
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    borderRadius: 9,
+    paddingHorizontal: 11,
+    color: '#FFFFFF',
+    fontSize: 13,
+  },
+
+  bulkPasswordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    borderRadius: 9,
+    backgroundColor: '#0B1C32',
+  },
+
+  bulkPasswordInput: {
+    flex: 1,
+    minHeight: 44,
+    paddingHorizontal: 11,
+    color: '#FFFFFF',
+    fontSize: 13,
+  },
+
+  bulkEyeButton: {
+    width: 42,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  bulkModalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 9,
+    padding: 12,
+    backgroundColor: '#101F39',
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
+  },
+
+  bulkCancelButton: {
+    minHeight: 42,
+    paddingHorizontal: 15,
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    borderRadius: 9,
+    backgroundColor: '#142B49',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  bulkSaveButton: {
+    minHeight: 42,
+    paddingHorizontal: 15,
+    borderRadius: 9,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  bulkButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  teacherNameRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  draftBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: '#B45363',
+    borderRadius: 20,
+    backgroundColor: '#3A1D2B',
+  },
+
+  draftBadgeText: {
+    color: '#FBC2CB',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
 });

@@ -463,4 +463,204 @@ export default StyleSheet.create({
     gap: 10,
     marginTop: 28,
   },
+
+  examWarningContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+
+    marginHorizontal: 12,
+    marginTop: 12,
+    marginBottom: 2,
+
+    paddingHorizontal: 12,
+    paddingVertical: 13,
+
+    backgroundColor: 'rgba(220, 53, 69, 0.17)',
+
+    borderWidth: 1.5,
+    borderColor: '#EF4444',
+    borderRadius: 12,
+  },
+
+  examWarningText: {
+    flex: 1,
+    color: '#E2E8F0',
+    fontSize: 12,
+    lineHeight: 19,
+    fontWeight: '500',
+  },
+
+  examWarningBold: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+  },
+
+  reviewModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.78)',
+    justifyContent: 'center',
+    padding: 12,
+  },
+
+  reviewModalCard: {
+    width: '100%',
+    height: '70%',
+    maxHeight: '75%',
+    backgroundColor: '#101D34',
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    borderRadius: 15,
+    overflow: 'hidden',
+  },
+
+  reviewModalHeader: {
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#294C6A',
+  },
+
+  reviewModalTitle: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '900',
+  },
+
+  reviewModalSubtitle: {
+    color: '#AFC0D8',
+    fontSize: 12,
+    lineHeight: 19,
+    marginTop: 8,
+  },
+
+  reviewModalScroll: {
+    flex: 1,
+    minHeight: 0,
+  },
+
+  reviewModalContent: {
+    padding: 12,
+    paddingBottom: 18,
+    gap: 12,
+  },
+
+  reviewQuestionCard: {
+    backgroundColor: '#081629',
+    borderWidth: 1,
+    borderColor: '#294C6A',
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+
+  reviewQuestionHeader: {
+    backgroundColor: '#19334B',
+    padding: 12,
+  },
+
+  reviewQuestionTitle: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+    lineHeight: 20,
+  },
+
+  reviewQuestionBody: {
+    padding: 10,
+    gap: 10,
+  },
+
+  reviewAnswerBox: {
+    backgroundColor: '#0B172D',
+    borderWidth: 1,
+    borderColor: '#25466F',
+    borderRadius: 10,
+    padding: 11,
+  },
+
+  reviewCorrectBox: {
+    backgroundColor: '#0D302E',
+    borderWidth: 1,
+    borderColor: '#168269',
+    borderRadius: 10,
+    padding: 11,
+  },
+
+  reviewAnswerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+
+  reviewAnswerLabel: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
+  reviewAnswerText: {
+    color: '#E2E8F0',
+    fontSize: 12,
+    lineHeight: 19,
+    marginTop: 7,
+  },
+
+  reviewScoreBadge: {
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    borderRadius: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+
+  reviewScoreText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+
+  reviewEmptyText: {
+    color: '#AFC0D8',
+    textAlign: 'center',
+    fontSize: 12,
+    paddingVertical: 25,
+  },
+
+  reviewModalFooter: {
+    flexShrink: 0,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+
+    borderTopWidth: 1,
+    borderTopColor: '#294C6A',
+
+    backgroundColor: '#101D34',
+
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  submittedBody: {
+    minHeight: 230,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 28,
+    paddingHorizontal: 14,
+    gap: 14,
+  },
+
+  submittedTitle: {
+    color: '#E2E8F0',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+
+  submittedDescription: {
+    color: '#A8B6C9',
+    fontSize: 12,
+    lineHeight: 19,
+    textAlign: 'center',
+  },
 });

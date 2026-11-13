@@ -199,8 +199,9 @@ export default StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'flex-end',
-    gap: 7,
-    maxWidth: '52%',
+    alignItems: 'center',
+    gap: 6,
+    maxWidth: '58%',
   },
 
   infoBadge: {
@@ -230,8 +231,11 @@ export default StyleSheet.create({
   },
 
   classText: {
-    color: MUTED,
-    fontSize: 12,
+    flexShrink: 1,
+    maxWidth: '55%',
+    color: '#AFC0D8',
+    fontSize: 11,
+    lineHeight: 16,
     textAlign: 'right',
   },
 

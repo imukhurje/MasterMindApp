@@ -107,11 +107,59 @@ function getExamTitle(item) {
   return item?.name || item?.title || item?.exam_name || 'Untitled exam paper';
 }
 
-export default function AdminManageExamPapers({ route, navigation }) {
+function getExamClassLabel(item) {
+  const classGroups = Array.isArray(item?.class_groups)
+    ? item.class_groups
+    : [];
+
+  if (classGroups.length === 0) {
+    return String(item?.class_name || '—');
+  }
+
+  // Example: Class-VII (A, B)
+  const names = [
+    ...new Set(
+      classGroups
+        .map(group => String(group?.name || item?.class_name || '').trim())
+        .filter(Boolean),
+    ),
+  ];
+
+  const sections = [
+    ...new Set(
+      classGroups
+        .map(group => String(group?.section || '').trim())
+        .filter(Boolean),
+    ),
+  ];
+
+  if (names.length === 1) {
+    return sections.length ? `${names[0]} (${sections.join(', ')})` : names[0];
+  }
+
+  return classGroups
+    .map(group => {
+      if (group?.label) return group.label;
+
+      return group.section ? `${group.name} (${group.section})` : group.name;
+    })
+    .filter(Boolean)
+    .join(', ');
+}
+
+export default function AdminManageExamPapers({
+  route,
+  navigation,
+  embedded = false,
+  examinationId: propExaminationId,
+  examinationName: propExaminationName,
+}) {
   const insets = useSafeAreaInsets();
 
-  const examinationId = route?.params?.examinationId;
-  const examinationName = route?.params?.examinationName || 'Examination';
+  const examinationId = propExaminationId ?? route?.params?.examinationId;
+
+  const examinationName =
+    propExaminationName ?? route?.params?.examinationName ?? 'Examination';
 
   const [exams, setExams] = useState([]);
   const [examMeta, setExamMeta] = useState(null);
@@ -151,15 +199,14 @@ export default function AdminManageExamPapers({ route, navigation }) {
 
         setCurrentUser(meResponse);
 
-        const role = String(
-          meResponse?.actual_role || meResponse?.role || '',
-        ).toLowerCase();
+        const role = String(meResponse?.actual_role || meResponse?.role || '')
+          .trim()
+          .toLowerCase();
 
         const hasAccess =
           meResponse?.is_admin === true ||
           meResponse?.is_super_admin === true ||
-          role === 'admin' ||
-          role === 'super_admin';
+          ['admin', 'super_admin', 'teacher'].includes(role);
 
         if (!hasAccess) {
           Alert.alert(
@@ -175,20 +222,36 @@ export default function AdminManageExamPapers({ route, navigation }) {
           return;
         }
 
-        const [examsResponse, metaResponse, resourcesResponse] =
-          await Promise.all([
-            api(
-              `/api/exams?window_days=3650&examination_id=${encodeURIComponent(
-                examinationId,
-              )}`,
-            ),
-            api('/api/exams/meta'),
-            api(
-              `/api/exams/resources-for-teacher/${encodeURIComponent(
-                meResponse.id,
-              )}`,
-            ),
-          ]);
+        const examListUrl =
+          `/api/exams?window_days=3650` +
+          `&page=1&per_page=20` +
+          `&examination_id=${encodeURIComponent(examinationId)}`;
+
+        const fetchExamApi = async (label, url) => {
+          try {
+            const response = await api(url);
+
+            console.log(`[MANAGE EXAM PAPERS] ${label}: success`);
+
+            return response;
+          } catch (error) {
+            console.log(`[MANAGE EXAM PAPERS] ${label}: failed`, {
+              status: error?.status,
+              message: error?.message,
+            });
+
+            throw new Error(`${label}: ${error?.message || 'Request failed'}`);
+          }
+        };
+
+        const [examsResponse, metaResponse] = await Promise.all([
+          fetchExamApi('Exam List', examListUrl),
+          fetchExamApi('Exam Meta', '/api/exams/meta'),
+        ]);
+
+        // This page does not need teacher resources
+        // to display exam papers.
+        const resourcesResponse = null;
 
         setExams(
           Array.isArray(examsResponse?.exams) ? examsResponse.exams : [],
@@ -203,9 +266,11 @@ export default function AdminManageExamPapers({ route, navigation }) {
         setExamMeta(metaResponse || null);
         setTeacherResources(resourcesResponse || null);
 
-        navigation.setOptions({
-          title: 'Manage Exam Papers',
-        });
+        if (!embedded) {
+          navigation.setOptions({
+            title: 'Manage Exam Papers',
+          });
+        }
       } catch (error) {
         console.log('Manage exam papers load error:', error);
 
@@ -218,7 +283,7 @@ export default function AdminManageExamPapers({ route, navigation }) {
         setRefreshing(false);
       }
     },
-    [examinationId, navigation],
+    [examinationId, navigation, embedded],
   );
 
   useFocusEffect(
@@ -299,6 +364,10 @@ export default function AdminManageExamPapers({ route, navigation }) {
   }
 
   function confirmDeleteExamPaper(item) {
+    if (item?.deletable === false) {
+      Alert.alert('Delete unavailable', 'This exam paper cannot be deleted.');
+      return;
+    }
     if (!item?.id || deletingId !== null) {
       return;
     }
@@ -388,12 +457,16 @@ export default function AdminManageExamPapers({ route, navigation }) {
     const schedulePhase = getSchedulePhase(item, nowMs);
 
     const scheduleLocked =
-      schedulePhase === 'running' || schedulePhase === 'finished';
+      isScheduled &&
+      (schedulePhase === 'running' || schedulePhase === 'finished');
 
     const allActionsDisabled = isEvaluated || scheduleLocked;
 
     const deleteDisabled =
-      isScheduled || deletingId !== null || allActionsDisabled;
+      deletingId !== null ||
+      item?.deletable === false ||
+      isScheduled ||
+      allActionsDisabled;
 
     return (
       <View
@@ -415,16 +488,24 @@ export default function AdminManageExamPapers({ route, navigation }) {
           <View style={styles.examBadgesRow}>
             <View style={styles.infoBadge}>
               <Text style={styles.infoBadgeText}>
-                Students: {Number(item?.students_count || 0)}
+                Students: {Number(item?.students_count ?? 0)}
               </Text>
             </View>
 
             <View style={styles.infoBadge}>
               <Text style={styles.infoBadgeText}>
-                Questions: {Number(item?.questions_count || 0)}
+                Questions: {Number(item?.questions_count ?? 0)}
               </Text>
             </View>
 
+            {/* Delivery Badge */}
+            <View style={styles.infoBadge}>
+              <Text style={styles.infoBadgeText}>
+                {item?.is_online === true ? 'Online' : 'Offline'}
+              </Text>
+            </View>
+
+            {/* Exam Status */}
             <View style={[styles.infoBadge, getStatusStyle(status)]}>
               <Text style={styles.infoBadgeText}>{formatStatus(status)}</Text>
             </View>
@@ -436,8 +517,8 @@ export default function AdminManageExamPapers({ route, navigation }) {
             {item?.course_title || '-'}
           </Text>
 
-          <Text numberOfLines={1} style={styles.classText}>
-            {item?.class_name || '-'}
+          <Text numberOfLines={2} style={styles.classText}>
+            {getExamClassLabel(item)}
           </Text>
         </View>
 
@@ -567,9 +648,15 @@ export default function AdminManageExamPapers({ route, navigation }) {
     <View
       style={[
         styles.screen,
-        {
-          paddingBottom: Math.max(insets.bottom, 8),
-        },
+        embedded
+          ? {
+              flex: 1,
+              paddingHorizontal: 0,
+              paddingTop: 0,
+            }
+          : {
+              paddingBottom: Math.max(insets.bottom, 8),
+            },
       ]}
     >
       <View style={styles.headerCard}>

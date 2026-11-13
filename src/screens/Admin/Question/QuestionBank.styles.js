@@ -352,7 +352,7 @@ export default StyleSheet.create({
   metaText: {
     color: COLORS.MUTED,
 
-    fontSize: 10,
+    fontSize: 15,
     lineHeight: 16,
 
     marginTop: 10,
@@ -360,10 +360,10 @@ export default StyleSheet.create({
 
   actionRow: {
     flexDirection: 'row',
-
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginTop: 12,
     gap: 8,
-
-    marginTop: 13,
   },
 
   editButton: {
@@ -492,5 +492,93 @@ export default StyleSheet.create({
     paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: 'rgba(55,109,153,0.45)',
+  },
+
+  modelAnswer: {
+    color: '#C7D7EC',
+    fontSize: 13,
+    lineHeight: 21,
+    marginTop: 10,
+    marginBottom: 8,
+    fontFamily: 'monospace',
+  },
+
+  questionTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+
+  questionCheckboxButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+  },
+
+  bulkActionsContainer: {
+    marginTop: 12,
+    marginBottom: 12,
+  },
+
+  bulkActionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  selectAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    minHeight: 38,
+    paddingHorizontal: 11,
+    borderRadius: 9,
+    backgroundColor: '#2563EB',
+  },
+
+  deselectAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    minHeight: 38,
+    paddingHorizontal: 11,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    backgroundColor: '#142B49',
+  },
+
+  deleteSelectedButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    minHeight: 38,
+    paddingHorizontal: 11,
+    borderRadius: 9,
+    backgroundColor: '#DC2626',
+  },
+
+  bulkButtonText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  bulkButtonDisabled: {
+    opacity: 0.4,
+  },
+
+  selectedCountText: {
+    color: '#93C5FD',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 9,
   },
 });

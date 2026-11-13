@@ -22,9 +22,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace "com.mastermind"
+    namespace "com.mastermindsrp"
     defaultConfig {
-        applicationId "com.mastermind"
+        applicationId "com.mastermindsrp"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

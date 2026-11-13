@@ -27,7 +27,6 @@ import styles from './AdminAssignExamQuestions.styles';
 import { useFocusEffect } from '@react-navigation/native';
 
 const PER_PAGE = 20;
-const MAX_EXAM_MARKS = 100;
 
 const QUESTION_TYPE_OPTIONS = [
   { label: 'All Types', value: 'all' },
@@ -187,6 +186,14 @@ export default function AdminAssignExamQuestions({ route, navigation }) {
   const [questionRows, setQuestionRows] = useState([]);
   const [questionCount, setQuestionCount] = useState(0);
   const [assignedQuestions, setAssignedQuestions] = useState([]);
+  const [marksInfo, setMarksInfo] = useState({
+    totalMarks: null,
+    extraMarks: 0,
+    questionMarksTarget: null,
+  });
+
+  const maxExamMarks = marksInfo.questionMarksTarget;
+  const marksLimitReady = maxExamMarks !== null;
 
   const [selectedBankIds, setSelectedBankIds] = useState(new Set());
   const [selectedAssignedIds, setSelectedAssignedIds] = useState(new Set());
@@ -361,6 +368,38 @@ export default function AdminAssignExamQuestions({ route, navigation }) {
             api(questionRequestUrl(1, '')),
           ]);
 
+        const totalMarks = Number(assignedResponse?.total_marks);
+
+        const extraMarks = Number(assignedResponse?.extra_marks ?? 0);
+
+        const questionMarksTarget = Number(
+          assignedResponse?.question_marks_target,
+        );
+
+        if (
+          assignedResponse?.question_marks_target == null ||
+          !Number.isFinite(questionMarksTarget) ||
+          questionMarksTarget < 0
+        ) {
+          throw new Error(
+            'Question paper marks target was not returned by the API.',
+          );
+        }
+
+        setMarksInfo({
+          totalMarks: Number.isFinite(totalMarks) ? totalMarks : null,
+
+          extraMarks: Number.isFinite(extraMarks) ? extraMarks : 0,
+
+          questionMarksTarget,
+        });
+
+        console.log('[EXAM QUESTION MARKS]', {
+          totalMarks,
+          extraMarks,
+          questionMarksTarget,
+        });
+
         const courseRows = Array.isArray(onlineCoursesResponse?.ottcourses)
           ? onlineCoursesResponse.ottcourses
           : [];
@@ -506,12 +545,20 @@ export default function AdminAssignExamQuestions({ route, navigation }) {
       return;
     }
 
+    if (!marksLimitReady) {
+      Alert.alert(
+        'Marks unavailable',
+        'Question paper marks limit has not loaded yet.',
+      );
+      return;
+    }
+
     const projectedMarks = totalAssignedMarks + newQuestions.length * 10;
 
-    if (projectedMarks > MAX_EXAM_MARKS) {
+    if (projectedMarks > maxExamMarks) {
       Alert.alert(
         'Marks limit exceeded',
-        `Adding these questions would exceed ${MAX_EXAM_MARKS} marks.`,
+        `Adding these questions would exceed ${maxExamMarks} marks.`,
       );
       return;
     }
@@ -542,7 +589,7 @@ export default function AdminAssignExamQuestions({ route, navigation }) {
           ? {
               ...question,
               marks: Number.isFinite(numericValue)
-                ? Math.min(numericValue, 100)
+                ? Math.min(numericValue, Math.max(0, maxExamMarks ?? 0))
                 : 0,
             }
           : question,
@@ -607,10 +654,18 @@ export default function AdminAssignExamQuestions({ route, navigation }) {
       return;
     }
 
-    if (totalAssignedMarks > MAX_EXAM_MARKS) {
+    if (!marksLimitReady) {
+      Alert.alert(
+        'Marks unavailable',
+        'Unable to confirm the question paper marks target.',
+      );
+      return;
+    }
+
+    if (totalAssignedMarks > maxExamMarks) {
       Alert.alert(
         'Marks limit exceeded',
-        `Total assigned marks cannot exceed ${MAX_EXAM_MARKS}.`,
+        `Total assigned marks cannot exceed ${maxExamMarks}.`,
       );
       return;
     }
@@ -1076,21 +1131,30 @@ export default function AdminAssignExamQuestions({ route, navigation }) {
             <View
               style={[
                 styles.marksBadge,
-                totalAssignedMarks === MAX_EXAM_MARKS &&
+
+                marksLimitReady &&
+                  totalAssignedMarks === maxExamMarks &&
                   styles.marksBadgeSuccess,
-                totalAssignedMarks > MAX_EXAM_MARKS && styles.marksBadgeError,
+
+                marksLimitReady &&
+                  totalAssignedMarks > maxExamMarks &&
+                  styles.marksBadgeError,
               ]}
             >
               <Text
                 style={[
                   styles.marksBadgeText,
-                  totalAssignedMarks === MAX_EXAM_MARKS &&
+
+                  marksLimitReady &&
+                    totalAssignedMarks === maxExamMarks &&
                     styles.marksBadgeTextSuccess,
-                  totalAssignedMarks > MAX_EXAM_MARKS &&
+
+                  marksLimitReady &&
+                    totalAssignedMarks > maxExamMarks &&
                     styles.marksBadgeTextError,
                 ]}
               >
-                {totalAssignedMarks}/{MAX_EXAM_MARKS}
+                {totalAssignedMarks}/{marksLimitReady ? maxExamMarks : '—'}
               </Text>
             </View>
           </View>
@@ -1138,19 +1202,24 @@ export default function AdminAssignExamQuestions({ route, navigation }) {
             onPress={saveQuestions}
             disabled={
               saving ||
+              !marksLimitReady ||
               assignedQuestions.length === 0 ||
-              totalAssignedMarks > MAX_EXAM_MARKS
+              totalAssignedMarks > maxExamMarks
             }
             style={({ pressed }) => [
               styles.saveButton,
+
               (saving ||
+                !marksLimitReady ||
                 assignedQuestions.length === 0 ||
-                totalAssignedMarks > MAX_EXAM_MARKS) &&
+                totalAssignedMarks > maxExamMarks) &&
                 styles.controlDisabled,
+
               pressed &&
                 !saving &&
+                marksLimitReady &&
                 assignedQuestions.length > 0 &&
-                totalAssignedMarks <= MAX_EXAM_MARKS &&
+                totalAssignedMarks <= maxExamMarks &&
                 styles.controlPressed,
             ]}
           >

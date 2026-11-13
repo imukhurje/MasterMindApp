@@ -1,6 +1,16 @@
 import React, { useEffect, useState } from 'react';
 
-import { Pressable, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import { api } from '../../../../api/client';
 
 import { styles } from './EvaluationQuestionCard.styles';
 
@@ -16,17 +26,69 @@ export default function EvaluationQuestionCard({
   question,
   number,
   onOpenFile,
+  readOnly = false,
 }) {
   const [awardedMarks, setAwardedMarks] = useState('');
 
   const [examinerNotes, setExaminerNotes] = useState('');
+
+  const [savingQuestionNotes, setSavingQuestionNotes] = useState(false);
+  const [savedQuestionNotes, setSavedQuestionNotes] = useState('');
+
+  async function saveQuestionNotes() {
+    const answerId = Number(question?.answer_id);
+
+    if (!Number.isInteger(answerId) || answerId <= 0) {
+      Alert.alert('Question Notes', 'Answer ID is missing.');
+      return;
+    }
+
+    if (savingQuestionNotes) return;
+
+    try {
+      setSavingQuestionNotes(true);
+
+      const response = await api(`/api/results/homework-answers/${answerId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          examiner_notes: examinerNotes,
+        }),
+      });
+
+      if (response?.ok !== true) {
+        throw new Error('Could not save question notes.');
+      }
+
+      setSavedQuestionNotes(examinerNotes);
+      Alert.alert('Success', 'Question notes saved successfully.');
+    } catch (error) {
+      console.log('[QUESTION NOTES SAVE ERROR]', {
+        answerId,
+        status: error?.status,
+        message: error?.message,
+      });
+
+      Alert.alert(
+        'Save Failed',
+        error?.message || 'Could not save question notes.',
+      );
+    } finally {
+      setSavingQuestionNotes(false);
+    }
+  }
 
   useEffect(() => {
     const marks = question?.grading?.awarded_marks;
 
     setAwardedMarks(marks === null || marks === undefined ? '' : String(marks));
 
-    setExaminerNotes(String(question?.grading?.examiner_notes || ''));
+    const initialNotes = String(question?.grading?.examiner_notes || '');
+
+    setExaminerNotes(initialNotes);
+    setSavedQuestionNotes(initialNotes);
   }, [question]);
 
   const type = String(question?.type || '');
@@ -37,8 +99,15 @@ export default function EvaluationQuestionCard({
     question?.auto?.auto_marks !== null &&
     question?.auto?.auto_marks !== undefined;
 
+  const isEvaluated = question?.grading?.is_evaluated === true;
+
   return (
-    <View style={styles.card}>
+    <View
+      style={[
+        styles.card,
+        isEvaluated ? styles.cardEvaluated : styles.cardNotEvaluated,
+      ]}
+    >
       <View style={styles.titleRow}>
         <Text style={styles.questionNumber}>Q{number}</Text>
 
@@ -49,11 +118,14 @@ export default function EvaluationQuestionCard({
 
       {isObjective ? (
         <View style={styles.options}>
-          {(question?.options || []).map(option => {
+          {(question?.options || []).map((option, index) => {
             const selected = optionSelected(question, option.id);
 
             return (
-              <View key={option.id} style={styles.optionRow}>
+              <View
+                key={`option-${option.id ?? 'none'}-${index}`}
+                style={styles.optionRow}
+              >
                 <View
                   style={[
                     styles.optionCheck,
@@ -95,9 +167,9 @@ export default function EvaluationQuestionCard({
           <Text style={styles.uploadLabel}>Uploads:</Text>
 
           <View style={styles.filesRow}>
-            {question.files.map(file => (
+            {question.files.map((file, index) => (
               <Pressable
-                key={file.id}
+                key={`question-file-${file.id ?? 'none'}-${index}`}
                 onPress={() => onOpenFile?.(file)}
                 style={styles.fileButton}
               >
@@ -118,8 +190,10 @@ export default function EvaluationQuestionCard({
         <TextInput
           value={awardedMarks}
           onChangeText={setAwardedMarks}
+          editable={!readOnly}
+          selectTextOnFocus={!readOnly}
           keyboardType="decimal-pad"
-          style={styles.markInput}
+          style={[styles.markInput, readOnly && { opacity: 0.75 }]}
         />
 
         {autoEvaluated ? (
@@ -146,18 +220,38 @@ export default function EvaluationQuestionCard({
 
       <Text style={styles.notesLabel}>Notes/advice for this question</Text>
 
-      <TextInput
-        value={examinerNotes}
-        onChangeText={setExaminerNotes}
-        multiline
-        textAlignVertical="top"
-        style={styles.notesInput}
-      />
+      <View style={styles.questionNotesRow}>
+        <TextInput
+          value={examinerNotes}
+          onChangeText={setExaminerNotes}
+          editable={!savingQuestionNotes}
+          selectTextOnFocus={!savingQuestionNotes}
+          multiline
+          textAlignVertical="top"
+          placeholder="Enter notes or advice..."
+          placeholderTextColor="#8091AA"
+          style={[styles.notesInput, styles.questionNotesInput]}
+        />
 
-      {/*
-        Saving marks/notes needs the
-        grading API endpoint.
-      */}
+        <Pressable
+          onPress={saveQuestionNotes}
+          disabled={savingQuestionNotes || examinerNotes === savedQuestionNotes}
+          accessibilityRole="button"
+          accessibilityLabel="Save question notes"
+          style={({ pressed }) => [
+            styles.questionNotesSaveButton,
+            (savingQuestionNotes || examinerNotes === savedQuestionNotes) &&
+              styles.questionNotesSaveDisabled,
+            pressed && { opacity: 0.75 },
+          ]}
+        >
+          {savingQuestionNotes ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Ionicons name="save-outline" size={19} color="#FFFFFF" />
+          )}
+        </Pressable>
+      </View>
     </View>
   );
 }

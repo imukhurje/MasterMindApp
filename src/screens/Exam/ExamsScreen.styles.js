@@ -303,4 +303,51 @@ export default StyleSheet.create({
     fontSize: 8,
     fontWeight: '900',
   },
+  paginationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: 8,
+    marginBottom: 5,
+  },
+
+  paginationTotal: {
+    color: COLORS.MUTED,
+    fontSize: 11,
+    marginRight: 4,
+  },
+
+  paginationButton: {
+    minWidth: 42,
+    height: 38,
+    borderWidth: 1,
+    borderColor: COLORS.BORDER,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.CARD_LIGHT,
+  },
+
+  paginationButtonText: {
+    color: COLORS.TEXT,
+    fontSize: 17,
+    fontWeight: '800',
+  },
+
+  paginationPage: {
+    color: COLORS.TEXT,
+    fontSize: 12,
+    fontWeight: '700',
+    backgroundColor: COLORS.CARD,
+    borderWidth: 1,
+    borderColor: COLORS.BORDER,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+
+  paginationDisabled: {
+    opacity: 0.4,
+  },
 });

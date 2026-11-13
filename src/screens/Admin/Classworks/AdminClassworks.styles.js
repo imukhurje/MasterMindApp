@@ -287,4 +287,11 @@ export default StyleSheet.create({
     fontSize: 13,
     fontWeight: '900',
   },
+  subjectText: {
+    color: '#AFC0D8',
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 18,
+    marginTop: 5,
+  },
 });

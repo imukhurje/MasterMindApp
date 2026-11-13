@@ -135,6 +135,12 @@ export default function AdminStudents({ navigation }) {
 
   const [selectedStudentIds, setSelectedStudentIds] = useState(() => new Set());
 
+  const [combinationStudent, setCombinationStudent] = useState(null);
+
+  const [selectedCombinationId, setSelectedCombinationId] = useState(null);
+
+  const [savingCombination, setSavingCombination] = useState(false);
+
   const classOptions = useMemo(() => {
     const classes = Array.isArray(meta?.classes) ? meta.classes : [];
 
@@ -433,6 +439,100 @@ export default function AdminStudents({ navigation }) {
   const handleIdentityCards = useCallback(() => {
     navigation.navigate('AdminStudentIdentityCards');
   }, [navigation]);
+
+  const openCombinationModal = useCallback(student => {
+    if (student?.subject_combination_eligible !== true) {
+      return;
+    }
+
+    setCombinationStudent(student);
+
+    setSelectedCombinationId(student?.subject_combination?.id ?? null);
+  }, []);
+
+  const closeCombinationModal = useCallback(() => {
+    if (savingCombination) return;
+
+    setCombinationStudent(null);
+    setSelectedCombinationId(null);
+  }, [savingCombination]);
+
+  const saveSubjectCombination = async () => {
+    if (!combinationStudent || savingCombination) return;
+
+    const studentId = Number(combinationStudent?.id);
+
+    if (!Number.isInteger(studentId) || studentId <= 0) {
+      Alert.alert('Error', 'Invalid student ID.');
+      return;
+    }
+
+    if (!selectedCombinationId) {
+      Alert.alert(
+        'Subject Combination',
+        'Please select a subject combination.',
+      );
+      return;
+    }
+
+    const options = Array.isArray(
+      combinationStudent?.subject_combination_options,
+    )
+      ? combinationStudent.subject_combination_options
+      : [];
+
+    if (
+      !options.some(
+        option => String(option.id) === String(selectedCombinationId),
+      )
+    ) {
+      Alert.alert('Subject Combination', 'Please select a valid combination.');
+      return;
+    }
+
+    try {
+      setSavingCombination(true);
+
+      const response = await api(
+        `/api/students/${studentId}/subject-combination`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            combination_id: selectedCombinationId,
+          }),
+        },
+      );
+
+      if (response?.ok !== true) {
+        throw new Error('Subject combination update failed.');
+      }
+
+      // Close modal
+      setCombinationStudent(null);
+      setSelectedCombinationId(null);
+
+      // Reload student list with existing search and filters
+      await loadStudents({
+        requestedPage: 1,
+        query: searchRef.current,
+        append: false,
+      });
+
+      Alert.alert('Success', 'Subject combination updated successfully.');
+    } catch (error) {
+      console.log('Subject combination error:', error);
+
+      Alert.alert(
+        'Update Failed',
+        error?.message || 'Could not update subject combination.',
+      );
+    } finally {
+      setSavingCombination(false);
+    }
+  };
 
   const handleEditStudent = useCallback(
     student => {
@@ -964,41 +1064,34 @@ export default function AdminStudents({ navigation }) {
       const isSelected =
         Number.isFinite(studentId) && selectedStudentIds.has(studentId);
 
-      const apiIssueLabels = Array.isArray(item?.placement?.issue_labels)
-        ? item.placement.issue_labels.filter(Boolean)
+      const placement = item?.placement;
+
+      const apiIssueLabels = Array.isArray(placement?.issue_labels)
+        ? placement.issue_labels.filter(Boolean)
         : [];
 
-      const fallbackIssues = [];
-
-      const classGroups = Array.isArray(item?.class_groups)
-        ? item.class_groups
+      const apiIssues = Array.isArray(placement?.issues)
+        ? placement.issues.filter(Boolean)
         : [];
 
-      const hasClass =
-        classGroups.length > 0 || Boolean(item?.placement?.class_group?.id);
+      let correctionIssues = [];
 
-      const hasAcademicYear =
-        Boolean(item?.academic_year_id) ||
-        Boolean(item?.placement?.academic_year?.id);
-
-      const hasSection =
-        classGroups.some(group => String(group?.section || '').trim()) ||
-        Boolean(String(item?.placement?.class_group?.section || '').trim());
-
-      if (!hasClass) {
-        fallbackIssues.push('No class selected');
+      // Backend placement result is authoritative.
+      if (placement?.complete === true) {
+        correctionIssues = [];
+      } else if (placement?.complete === false) {
+        correctionIssues =
+          apiIssueLabels.length > 0
+            ? apiIssueLabels
+            : apiIssues.length > 0
+            ? apiIssues.map(String)
+            : ['Student placement is incomplete'];
+      } else {
+        // When placement.complete is not returned,
+        // use the issues reported by the backend.
+        correctionIssues =
+          apiIssueLabels.length > 0 ? apiIssueLabels : apiIssues.map(String);
       }
-
-      if (!hasAcademicYear) {
-        fallbackIssues.push('Academic year is missing');
-      }
-
-      if (!hasSection) {
-        fallbackIssues.push('Section is missing');
-      }
-
-      const correctionIssues =
-        apiIssueLabels.length > 0 ? apiIssueLabels : fallbackIssues;
 
       const needsCorrection = correctionIssues.length > 0;
 
@@ -1056,22 +1149,24 @@ export default function AdminStudents({ navigation }) {
               <View style={styles.detailsLeft}>
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Class</Text>
-                  <Text style={styles.detailValue}>
-                    {item?.class_label || 'No class'}
+
+                  <Text style={styles.detailValue} numberOfLines={2}>
+                    {classLabel}
                   </Text>
                 </View>
 
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Academic Year</Text>
-                  <Text style={styles.detailValue}>
-                    {item?.academic_year || 'No academic year'}
-                  </Text>
+
+                  <Text style={styles.detailValue}>{academicYear}</Text>
                 </View>
               </View>
 
               <Pressable
                 onPress={() => toggleStudentSelection(item?.id)}
                 hitSlop={8}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: isSelected }}
                 style={({ pressed }) => [
                   styles.studentCheckSideButton,
                   isSelected && styles.studentCheckSideButtonSelected,
@@ -1087,25 +1182,38 @@ export default function AdminStudents({ navigation }) {
                 />
               </Pressable>
             </View>
-
-            <View style={styles.badgesRow}>{/* active / draft badges */}</View>
           </View>
 
-          <View style={styles.detailsSection}>
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Class</Text>
-
-              <Text style={styles.detailValue} numberOfLines={2}>
-                {classLabel}
+          {item?.subject_combination_eligible === true && (
+            <View style={styles.subjectCombinationSection}>
+              <Text style={styles.subjectCombinationLabel}>
+                Subject Combination
               </Text>
-            </View>
 
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Academic Year</Text>
+              <View style={styles.subjectCombinationRow}>
+                <View style={styles.subjectCombinationValue}>
+                  <Text style={styles.subjectCombinationText} numberOfLines={1}>
+                    {item?.subject_combination?.name ||
+                      'No subject combination assigned'}
+                  </Text>
+                </View>
 
-              <Text style={styles.detailValue}>{academicYear}</Text>
+                <Pressable
+                  onPress={() => openCombinationModal(item)}
+                  style={({ pressed }) => [
+                    styles.subjectCombinationEditButton,
+                    pressed && styles.controlPressed,
+                  ]}
+                >
+                  <MaterialCommunityIcons
+                    name="pencil"
+                    size={18}
+                    color="#FFFFFF"
+                  />
+                </Pressable>
+              </View>
             </View>
-          </View>
+          )}
 
           <View style={styles.badgesRow}>
             <View
@@ -1218,6 +1326,7 @@ export default function AdminStudents({ navigation }) {
       handleDeleteStudent,
       handleShowCredentialsMessage,
       handleStudentIconAction,
+      openCombinationModal,
     ],
   );
 
@@ -1799,6 +1908,109 @@ export default function AdminStudents({ navigation }) {
                 </View>
               </>
             ) : null}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={combinationStudent !== null}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={closeCombinationModal}
+      >
+        <View style={styles.combinationModalOverlay}>
+          <Pressable
+            style={styles.combinationModalBackdrop}
+            onPress={closeCombinationModal}
+          />
+
+          <View style={styles.combinationModalCard}>
+            <View style={styles.combinationModalHeader}>
+              <Text style={styles.combinationModalTitle}>
+                Subject Combination — {combinationStudent?.name}
+              </Text>
+
+              <Pressable
+                disabled={savingCombination}
+                onPress={closeCombinationModal}
+                style={styles.combinationCloseButton}
+              >
+                <MaterialCommunityIcons
+                  name="close"
+                  size={21}
+                  color="#FFFFFF"
+                />
+              </Pressable>
+            </View>
+
+            <Text style={styles.combinationClassText}>
+              Class: {formatClassGroups(combinationStudent?.class_groups)}
+            </Text>
+
+            <Text style={styles.combinationFieldLabel}>
+              Subject Combination
+            </Text>
+
+            <ScrollView
+              style={styles.combinationOptionsList}
+              nestedScrollEnabled
+            >
+              {(combinationStudent?.subject_combination_options || []).map(
+                option => {
+                  const selected =
+                    String(selectedCombinationId) === String(option.id);
+
+                  return (
+                    <Pressable
+                      key={String(option.id)}
+                      onPress={() => setSelectedCombinationId(option.id)}
+                      disabled={savingCombination}
+                      style={[
+                        styles.combinationOption,
+                        selected && styles.combinationOptionSelected,
+                      ]}
+                    >
+                      <Text style={styles.combinationOptionText}>
+                        {option.name}
+                      </Text>
+
+                      <MaterialCommunityIcons
+                        name={selected ? 'radiobox-marked' : 'radiobox-blank'}
+                        size={21}
+                        color={selected ? '#7DD3FC' : '#94A3B8'}
+                      />
+                    </Pressable>
+                  );
+                },
+              )}
+            </ScrollView>
+
+            <View style={styles.combinationModalFooter}>
+              <Pressable
+                onPress={closeCombinationModal}
+                disabled={savingCombination}
+                style={styles.combinationCancelButton}
+              >
+                <Text style={styles.combinationButtonText}>Cancel</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={saveSubjectCombination}
+                disabled={savingCombination || !selectedCombinationId}
+                style={[
+                  styles.combinationSaveButton,
+                  (savingCombination || !selectedCombinationId) &&
+                    styles.controlDisabled,
+                ]}
+              >
+                {savingCombination ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.combinationButtonText}>Save</Text>
+                )}
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>

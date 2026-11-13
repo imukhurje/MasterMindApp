@@ -28,6 +28,7 @@ import AccountsPayableTab from './tabs/AccountsPayableTab';
 import BankAndJournalTab from './tabs/BankAndJournalTab';
 import FinanceSettingsTab from './tabs/FinanceSettingsTab';
 import ReportsTab from './tabs/ReportsTab';
+import SimpleEntryTab from './tabs/SimpleEntryTab';
 
 import {
   formatMoney,
@@ -38,6 +39,10 @@ import {
 const BASE = '/api/plugins/financial-accounting';
 
 const AREA_OPTIONS = [
+  {
+    key: 'simple_entries',
+    label: 'Simple Entry',
+  },
   {
     key: 'receivables',
     label: 'Accounts Receivable',
@@ -320,6 +325,9 @@ export default function AdminAccounts() {
 
   function renderActiveArea() {
     switch (activeArea) {
+      case 'simple_entries':
+        return <SimpleEntryTab currencySymbol={currencySymbol} />;
+
       case 'receivables':
         return (
           <AccountsReceivableTab

@@ -138,13 +138,28 @@ export default function AdminMarkAttendance({ navigation }) {
       route?.params?.session?.class_group_id,
   );
 
-  const isDailyAttendance =
-    routeSessionType === 'daily' ||
-    String(rawSessionId || '').startsWith('daily:');
+  const sessionKey = String(rawSessionId ?? '').trim();
 
-  const sessionId = isDailyAttendance
-    ? String(rawSessionId || '')
-    : Number(rawSessionId);
+  const isDailyAttendance =
+    routeSessionType === 'daily' || sessionKey.startsWith('daily:');
+
+  const isTutorialAttendance =
+    routeSessionType === 'tutorial' || sessionKey.startsWith('tutorial:');
+
+  const tutorialMatch = sessionKey.match(
+    /^tutorial:(\d{4}-\d{2}-\d{2}):(\d+)$/,
+  );
+
+  const tutorialDate = tutorialMatch?.[1] || sheetDate;
+
+  const tutorialSheetId = tutorialMatch
+    ? Number(tutorialMatch[2])
+    : Number(route?.params?.tutorialSheetId);
+
+  const sessionId =
+    isDailyAttendance || isTutorialAttendance
+      ? sessionKey
+      : Number(rawSessionId);
 
   const scanLockRef = useRef(false);
 
@@ -164,7 +179,9 @@ export default function AdminMarkAttendance({ navigation }) {
   const [students, setStudents] = useState([]);
 
   const [activeTab, setActiveTab] = useState(
-    route?.params?.initialTab === 'manual' ? 'manual' : 'qr',
+    isTutorialAttendance || route?.params?.initialTab === 'manual'
+      ? 'manual'
+      : 'qr',
   );
 
   const [search, setSearch] = useState('');
@@ -184,28 +201,28 @@ export default function AdminMarkAttendance({ navigation }) {
   const loadSession = useCallback(
     async ({ showLoader = true } = {}) => {
       if (isDailyAttendance) {
-        if (!sheetDate || !Number.isFinite(classGroupId)) {
+        if (
+          !/^\d{4}-\d{2}-\d{2}$/.test(sheetDate) ||
+          !Number.isInteger(classGroupId) ||
+          classGroupId <= 0
+        ) {
           Alert.alert(
             'Attendance',
             'Attendance date or class information is missing.',
-            [
-              {
-                text: 'OK',
-                onPress: () => navigation.goBack(),
-              },
-            ],
           );
-
           return;
         }
-      } else if (!Number.isFinite(sessionId)) {
-        Alert.alert('Attendance', 'Attendance session ID is missing.', [
-          {
-            text: 'OK',
-            onPress: () => navigation.goBack(),
-          },
-        ]);
-
+      } else if (isTutorialAttendance) {
+        if (
+          !/^\d{4}-\d{2}-\d{2}$/.test(tutorialDate) ||
+          !Number.isInteger(tutorialSheetId) ||
+          tutorialSheetId <= 0
+        ) {
+          Alert.alert('Attendance', 'Invalid tutorial attendance information.');
+          return;
+        }
+      } else if (!Number.isInteger(sessionId) || sessionId <= 0) {
+        Alert.alert('Attendance', 'Attendance session ID is missing.');
         return;
       }
 
@@ -222,6 +239,12 @@ export default function AdminMarkAttendance({ navigation }) {
               sheetDate,
             )}?class_group_id=${encodeURIComponent(classGroupId)}`,
           );
+        } else if (isTutorialAttendance) {
+          response = await api(
+            `/api/attendance/tutorial-sheets/${encodeURIComponent(
+              tutorialDate,
+            )}/${encodeURIComponent(tutorialSheetId)}`,
+          );
         } else {
           response = await api(
             `/api/attendance/sessions/${encodeURIComponent(sessionId)}`,
@@ -231,7 +254,6 @@ export default function AdminMarkAttendance({ navigation }) {
         const rows = Array.isArray(response?.students) ? response.students : [];
 
         setSession(response?.session || null);
-
         setStudents(rows);
 
         setManualPresentIds(
@@ -242,23 +264,37 @@ export default function AdminMarkAttendance({ navigation }) {
           ),
         );
       } catch (error) {
-        console.log('Attendance session load error:', error);
+        console.log('Attendance session load error:', {
+          status: error?.status,
+          message: error?.message,
+        });
 
         Alert.alert(
           'Mark Attendance',
-          error?.message || 'Could not load the attendance session.',
+          error?.message || 'Could not load attendance.',
         );
       } finally {
         setLoading(false);
       }
     },
-    [sessionId, sheetDate, classGroupId, isDailyAttendance, navigation],
+    [
+      sessionId,
+      sheetDate,
+      classGroupId,
+      isDailyAttendance,
+      isTutorialAttendance,
+      tutorialDate,
+      tutorialSheetId,
+      navigation,
+    ],
   );
 
   useFocusEffect(
     useCallback(() => {
       const initialTab =
-        route?.params?.initialTab === 'manual' ? 'manual' : 'qr';
+        isTutorialAttendance || route?.params?.initialTab === 'manual'
+          ? 'manual'
+          : 'qr';
 
       setActiveTab(initialTab);
 
@@ -271,7 +307,7 @@ export default function AdminMarkAttendance({ navigation }) {
       return () => {
         setCameraEnabled(false);
       };
-    }, [loadSession, route?.params?.initialTab]),
+    }, [loadSession, route?.params?.initialTab, isTutorialAttendance]),
   );
 
   const startCamera = useCallback(async () => {
@@ -577,57 +613,76 @@ export default function AdminMarkAttendance({ navigation }) {
     try {
       setSaving(true);
 
-      const presentIds = Array.from(manualPresentIds);
+      // All currently selected Present student IDs
+      const presentIds = Array.from(manualPresentIds)
+        .map(Number)
+        .filter(id => Number.isInteger(id) && id > 0);
 
       let endpoint;
 
-      if (isDailyAttendance) {
+      if (isTutorialAttendance) {
+        // Tutorial Attendance
+        if (
+          !/^\d{4}-\d{2}-\d{2}$/.test(tutorialDate) ||
+          !Number.isInteger(tutorialSheetId) ||
+          tutorialSheetId <= 0
+        ) {
+          throw new Error('Invalid tutorial attendance information.');
+        }
+
+        endpoint =
+          `/api/attendance/tutorial-sheets/` +
+          `${encodeURIComponent(tutorialDate)}/` +
+          `${encodeURIComponent(tutorialSheetId)}/mark`;
+      } else if (isDailyAttendance) {
+        // Daily Attendance
         if (!sheetDate) {
           throw new Error('Attendance sheet date is missing.');
         }
 
-        endpoint = `/api/attendance/daily-sheets/${encodeURIComponent(
-          sheetDate,
-        )}/mark`;
+        endpoint =
+          `/api/attendance/daily-sheets/` +
+          `${encodeURIComponent(sheetDate)}/mark`;
       } else {
-        if (!Number.isFinite(sessionId)) {
+        // Regular Lecture Attendance
+        if (!Number.isInteger(sessionId) || sessionId <= 0) {
           throw new Error('Attendance session ID is missing.');
         }
 
-        endpoint = `/api/attendance/sessions/${encodeURIComponent(
-          sessionId,
-        )}/mark`;
+        endpoint =
+          `/api/attendance/sessions/` + `${encodeURIComponent(sessionId)}/mark`;
       }
 
       const response = await api(endpoint, {
         method: 'POST',
-
         body: JSON.stringify({
           present_ids: presentIds,
         }),
       });
 
-      /*
-       * Reload attendance after a successful request.
-       * The API helper should throw automatically
-       * for non-success HTTP responses.
-       */
-      await loadSession({
-        showLoader: false,
-      });
+      if (!response?.message) {
+        throw new Error('Could not update attendance.');
+      }
 
-      Alert.alert(
-        'Attendance Saved',
-        response?.message || 'Attendance updated successfully.',
-        [
-          {
-            text: 'OK',
-            onPress: () => navigation.goBack(),
-          },
-        ],
-      );
+      // Reload saved attendance data
+      try {
+        await loadSession({ showLoader: false });
+      } catch (refreshError) {
+        console.log('Attendance refresh error:', refreshError);
+      }
+
+      Alert.alert('Attendance Saved', response.message, [
+        {
+          text: 'OK',
+          onPress: () => navigation.goBack(),
+        },
+      ]);
     } catch (error) {
-      console.log('Save attendance error:', error);
+      console.log('[SAVE ATTENDANCE ERROR]', {
+        status: error?.status,
+        message: error?.message,
+        payload: error?.payload,
+      });
 
       Alert.alert(
         'Save failed',
@@ -640,7 +695,10 @@ export default function AdminMarkAttendance({ navigation }) {
     saving,
     manualPresentIds,
     isDailyAttendance,
+    isTutorialAttendance,
     sheetDate,
+    tutorialDate,
+    tutorialSheetId,
     sessionId,
     loadSession,
     navigation,

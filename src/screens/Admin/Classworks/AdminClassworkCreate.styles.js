@@ -358,4 +358,86 @@ export default StyleSheet.create({
     color: MUTED,
     fontSize: 11,
   },
+
+  subjectHint: {
+    color: '#FCA5A5',
+    fontSize: 11,
+    marginTop: 7,
+  },
+
+  selectedSubjectsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+    marginTop: 10,
+  },
+
+  selectedSubjectChip: {
+    minHeight: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+    borderWidth: 1,
+    borderColor: '#3E79A8',
+    borderRadius: 8,
+    backgroundColor: '#173E66',
+  },
+
+  selectedSubjectText: {
+    color: '#DCEBFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  subjectSelectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+  },
+
+  subjectCount: {
+    color: '#AFC0D8',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  selectAllSubjects: {
+    color: '#60A5FA',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  subjectOptionText: {
+    flex: 1,
+    color: '#F8FAFC',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  subjectModalFooter: {
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(62,121,168,0.35)',
+    alignItems: 'flex-end',
+  },
+
+  subjectDoneButton: {
+    minWidth: 90,
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2563EB',
+    borderRadius: 9,
+    paddingHorizontal: 16,
+  },
+
+  subjectDoneText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '900',
+  },
 });

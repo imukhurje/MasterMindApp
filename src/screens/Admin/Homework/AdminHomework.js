@@ -40,6 +40,24 @@ function formatDateTime(value) {
   });
 }
 
+function getHomeworkSubjects(homework) {
+  const subjects = Array.isArray(homework?.courses)
+    ? homework.courses
+        .map(course =>
+          String(course?.title || course?.course_title || '').trim(),
+        )
+        .filter(Boolean)
+    : [];
+
+  const uniqueSubjects = [...new Set(subjects)];
+
+  if (uniqueSubjects.length > 0) {
+    return uniqueSubjects.join(', ');
+  }
+
+  return homework?.course_title || homework?.subject_name || 'No subject';
+}
+
 export default function AdminHomework({ navigation }) {
   const insets = useSafeAreaInsets();
 
@@ -63,7 +81,7 @@ export default function AdminHomework({ navigation }) {
   const [homeworkMeta, setHomeworkMeta] = useState(null);
 
   const loadHomeworks = useCallback(
-    async ({ refresh = false } = {}) => {
+    async ({ refresh = false, page = 1 } = {}) => {
       try {
         if (refresh) {
           setRefreshing(true);
@@ -71,18 +89,21 @@ export default function AdminHomework({ navigation }) {
           setLoading(true);
         }
 
+        const requestedPage = Math.max(1, Number(page) || 1);
+
         const [meResponse, homeworksResponse, metaResponse] = await Promise.all(
           [
             api('/api/me'),
 
-            api('/api/homeworks?window_days=30&page=1&per_page=20'),
+            api(
+              `/api/homeworks?window_days=30&page=${requestedPage}&per_page=20`,
+            ),
 
             api('/api/homeworks/meta'),
           ],
         );
 
         setMe(meResponse || null);
-
         setHomeworkMeta(metaResponse || {});
 
         const items = Array.isArray(homeworksResponse?.items)
@@ -91,19 +112,14 @@ export default function AdminHomework({ navigation }) {
 
         setHomeworks(items);
 
-        const paginationResponse = homeworksResponse?.pagination || {};
+        const pageInfo = homeworksResponse?.pagination || {};
 
         setPagination({
-          currentPage: Number(paginationResponse?.current_page || 1),
-
-          lastPage: Number(paginationResponse?.last_page || 1),
-
-          perPage: Number(paginationResponse?.per_page || 20),
-
+          currentPage: Number(pageInfo.current_page ?? requestedPage),
+          lastPage: Math.max(1, Number(pageInfo.last_page ?? 1)),
+          perPage: Number(pageInfo.per_page ?? 20),
           total: Number(
-            paginationResponse?.total ??
-              homeworksResponse?.count ??
-              items.length,
+            pageInfo.total ?? homeworksResponse?.count ?? items.length,
           ),
         });
 
@@ -142,6 +158,7 @@ export default function AdminHomework({ navigation }) {
         item?.class_name,
         item?.course_title,
         item?.subject_name,
+        getHomeworkSubjects(item),
         item?.status,
       ]
         .filter(Boolean)
@@ -151,6 +168,24 @@ export default function AdminHomework({ navigation }) {
       return searchableText.includes(query);
     });
   }, [homeworks, searchText]);
+
+  function changePage(nextPage) {
+    if (
+      loading ||
+      refreshing ||
+      nextPage < 1 ||
+      nextPage > pagination.lastPage ||
+      nextPage === pagination.currentPage
+    ) {
+      return;
+    }
+
+    setSearchText('');
+
+    loadHomeworks({
+      page: nextPage,
+    });
+  }
 
   function openAddHomework() {
     navigation.navigate('AdminHomeworkForm', {
@@ -287,11 +322,21 @@ export default function AdminHomework({ navigation }) {
         </View>
 
         <View style={styles.homeworkInfoRow}>
-          <Text numberOfLines={1} style={styles.courseText}>
-            {item?.course_title || 'No course'}
+          <Text
+            numberOfLines={2}
+            style={[
+              styles.courseText,
+              {
+                flex: 1,
+                flexShrink: 1,
+                lineHeight: 17,
+              },
+            ]}
+          >
+            {getHomeworkSubjects(item)}
           </Text>
 
-          <Text numberOfLines={1} style={styles.classText}>
+          <Text numberOfLines={1} style={[styles.classText, { marginLeft: 8 }]}>
             {item?.class_name || 'No class'}
           </Text>
         </View>
@@ -405,8 +450,16 @@ export default function AdminHomework({ navigation }) {
 
         <View style={styles.resultSummary}>
           <Text style={styles.resultSummaryText}>
-            Showing {filteredHomeworks.length}{' '}
-            {filteredHomeworks.length === 1 ? 'homework' : 'homeworks'}
+            {searchText.trim()
+              ? `Showing ${filteredHomeworks.length} matching homeworks on this page`
+              : `Showing ${
+                  pagination.total === 0
+                    ? 0
+                    : (pagination.currentPage - 1) * pagination.perPage + 1
+                }–${Math.min(
+                  pagination.currentPage * pagination.perPage,
+                  pagination.total,
+                )} of ${pagination.total} homeworks`}
           </Text>
         </View>
 
@@ -421,6 +474,7 @@ export default function AdminHomework({ navigation }) {
               onRefresh={() =>
                 loadHomeworks({
                   refresh: true,
+                  page: pagination.currentPage,
                 })
               }
               tintColor="#FFFFFF"
@@ -442,6 +496,54 @@ export default function AdminHomework({ navigation }) {
             </View>
           }
         />
+
+        <View style={styles.paginationContainer}>
+          <View style={styles.paginationLeft}>
+            <Text style={styles.paginationTotalText}>
+              {pagination.total} total
+            </Text>
+          </View>
+
+          <View style={styles.paginationRight}>
+            <Pressable
+              onPress={() => changePage(pagination.currentPage - 1)}
+              disabled={loading || refreshing || pagination.currentPage <= 1}
+              style={({ pressed }) => [
+                styles.paginationButton,
+                (loading || refreshing || pagination.currentPage <= 1) &&
+                  styles.paginationButtonDisabled,
+                pressed && styles.controlPressed,
+              ]}
+            >
+              <Text style={styles.paginationArrow}>←</Text>
+            </Pressable>
+
+            <View style={styles.paginationPageIndicator}>
+              <Text style={styles.paginationPageText}>
+                {pagination.currentPage}/{pagination.lastPage}
+              </Text>
+            </View>
+
+            <Pressable
+              onPress={() => changePage(pagination.currentPage + 1)}
+              disabled={
+                loading ||
+                refreshing ||
+                pagination.currentPage >= pagination.lastPage
+              }
+              style={({ pressed }) => [
+                styles.paginationButton,
+                (loading ||
+                  refreshing ||
+                  pagination.currentPage >= pagination.lastPage) &&
+                  styles.paginationButtonDisabled,
+                pressed && styles.controlPressed,
+              ]}
+            >
+              <Text style={styles.paginationArrow}>→</Text>
+            </Pressable>
+          </View>
+        </View>
       </View>
 
       <View style={styles.hiddenMetadata}>

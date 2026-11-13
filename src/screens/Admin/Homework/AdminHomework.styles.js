@@ -328,4 +328,70 @@ export default StyleSheet.create({
     height: 1,
     opacity: 0,
   },
+
+  paginationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#3B7197',
+    backgroundColor: '#0F172A',
+  },
+
+  paginationLeft: {
+    flex: 1,
+  },
+
+  paginationTotalText: {
+    color: '#AFC0D8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  paginationRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+
+  paginationButton: {
+    width: 43,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    borderRadius: 11,
+    backgroundColor: '#142B49',
+  },
+
+  paginationButtonDisabled: {
+    opacity: 0.4,
+  },
+
+  paginationArrow: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '700',
+  },
+
+  paginationPageIndicator: {
+    minWidth: 48,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    borderRadius: 18,
+    backgroundColor: '#142B49',
+    paddingHorizontal: 8,
+  },
+
+  paginationPageText: {
+    color: '#E2E8F0',
+    fontSize: 12,
+    fontWeight: '700',
+  },
 });

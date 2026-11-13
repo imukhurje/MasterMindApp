@@ -400,4 +400,21 @@ export const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
   },
+  reorderButton: {
+    minHeight: 42,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    borderRadius: 10,
+    backgroundColor: '#142B49',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+
+  reorderButtonText: {
+    color: '#E2E8F0',
+    fontSize: 11,
+    fontWeight: '800',
+  },
 });

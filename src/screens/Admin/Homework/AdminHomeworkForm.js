@@ -20,6 +20,7 @@ import { api, getToken, getBase } from '../../../api/client';
 import styles from './AdminHomeworkForm.styles';
 import AttachOptionalSection from './../../Homework/AttachOptionalSection';
 import ReactNativeBlobUtil from 'react-native-blob-util';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 
 function normalizeTeacher(item) {
   return {
@@ -62,9 +63,12 @@ function buildTeacherList(rows, currentUser, homework = null) {
     );
   }
 
-  const ownerId = Number(homework?.created_by);
+  const ownerId =
+    homework?.created_by != null && homework.created_by !== ''
+      ? Number(homework.created_by)
+      : null;
 
-  if (Number.isFinite(ownerId) && !map.has(ownerId)) {
+  if (Number.isInteger(ownerId) && ownerId > 0 && !map.has(ownerId)) {
     map.set(
       ownerId,
       normalizeTeacher({
@@ -99,11 +103,32 @@ function normalizeCourse(item) {
   };
 }
 
+function getHomeworkCourseIds(homework) {
+  let ids = [];
+
+  if (Array.isArray(homework?.courses) && homework.courses.length > 0) {
+    ids = homework.courses.map(course => course?.id);
+  } else if (
+    Array.isArray(homework?.course_ids) &&
+    homework.course_ids.length > 0
+  ) {
+    ids = homework.course_ids;
+  } else if (homework?.course_id != null) {
+    ids = [homework.course_id];
+  }
+
+  return [
+    ...new Set(ids.map(Number).filter(id => Number.isInteger(id) && id > 0)),
+  ];
+}
+
 function SelectModal({
   visible,
   title,
   options,
   selectedValue,
+  selectedValues = [],
+  multiple = false,
   onSelect,
   onClose,
   loading = false,
@@ -139,13 +164,20 @@ function SelectModal({
               keyExtractor={item => String(item.value)}
               style={styles.selectOptionsList}
               renderItem={({ item }) => {
-                const selected = String(item.value) === String(selectedValue);
+                const selected = multiple
+                  ? selectedValues.some(
+                      value => String(value) === String(item.value),
+                    )
+                  : String(item.value) === String(selectedValue);
 
                 return (
                   <Pressable
                     onPress={() => {
                       onSelect(item.value);
-                      onClose();
+
+                      if (!multiple) {
+                        onClose();
+                      }
                     }}
                     style={({ pressed }) => [
                       styles.selectOption,
@@ -181,7 +213,9 @@ function SelectModal({
               pressed && styles.controlPressed,
             ]}
           >
-            <Text style={styles.modalCloseButtonText}>Close</Text>
+            <Text style={styles.modalCloseButtonText}>
+              {multiple ? 'Done' : 'Close'}
+            </Text>
           </Pressable>
         </View>
       </View>
@@ -242,23 +276,32 @@ export default function AdminHomeworkForm({ route, navigation }) {
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
 
   const initialTeacherId = useMemo(() => {
-    const ownerId = Number(homework?.created_by);
+    const ownerId =
+      homework?.created_by != null && homework.created_by !== ''
+        ? Number(homework.created_by)
+        : null;
 
-    if (isEdit && Number.isFinite(ownerId)) {
+    if (isEdit && Number.isInteger(ownerId) && ownerId > 0) {
       return ownerId;
     }
 
-    return Number.isFinite(currentUserId) ? currentUserId : null;
+    if (Number.isInteger(currentUserId) && currentUserId > 0) {
+      return currentUserId;
+    }
+
+    return null;
   }, [currentUserId, homework, isEdit]);
 
   const [selectedTeacherId, setSelectedTeacherId] = useState(initialTeacherId);
+
+  const [teacherChangedByUser, setTeacherChangedByUser] = useState(false);
 
   const [selectedClassId, setSelectedClassId] = useState(
     isEdit ? Number(homework?.class_group_id) : null,
   );
 
-  const [selectedCourseId, setSelectedCourseId] = useState(
-    isEdit ? Number(homework?.course_id) : null,
+  const [selectedCourseIds, setSelectedCourseIds] = useState(() =>
+    isEdit ? getHomeworkCourseIds(homework) : [],
   );
 
   const [title, setTitle] = useState(
@@ -338,13 +381,25 @@ export default function AdminHomeworkForm({ route, navigation }) {
     [classes, homework, selectedClassId],
   );
 
-  const selectedCourseLabel = useMemo(
-    () =>
-      courses.find(item => item.id === selectedCourseId)?.title ||
-      homework?.course_title ||
-      'Select...',
-    [courses, homework, selectedCourseId],
-  );
+  const selectedCourseLabel = useMemo(() => {
+    if (selectedCourseIds.length === 0) {
+      return 'Select subjects...';
+    }
+
+    return `${selectedCourseIds.length} subject(s) selected`;
+  }, [selectedCourseIds]);
+
+  function toggleSubject(courseId) {
+    const id = Number(courseId);
+
+    if (!Number.isInteger(id) || id <= 0) return;
+
+    setSelectedCourseIds(current =>
+      current.includes(id)
+        ? current.filter(value => value !== id)
+        : [...current, id],
+    );
+  }
 
   const loadTeacherResources = useCallback(
     async (
@@ -378,21 +433,29 @@ export default function AdminHomeworkForm({ route, navigation }) {
           ];
         }
 
-        const preservedCourseId = Number(preserveCourseId);
+        const preservedCourses = Array.isArray(homework?.courses)
+          ? homework.courses.map(normalizeCourse)
+          : [];
 
-        if (
-          Number.isFinite(preservedCourseId) &&
-          !nextCourses.some(item => item.id === preservedCourseId)
-        ) {
-          nextCourses = [
-            ...nextCourses,
-            {
-              id: preservedCourseId,
+        const preservedIds = getHomeworkCourseIds(homework);
 
-              title: homework?.course_title || 'Current course',
-            },
-          ];
-        }
+        preservedIds.forEach(courseId => {
+          if (!nextCourses.some(item => item.id === courseId)) {
+            const existingCourse = preservedCourses.find(
+              item => item.id === courseId,
+            );
+
+            nextCourses.push({
+              id: courseId,
+              title:
+                existingCourse?.title ||
+                (courseId === Number(homework?.course_id)
+                  ? homework?.course_title
+                  : null) ||
+                `Subject ${courseId}`,
+            });
+          }
+        });
 
         setClasses(nextClasses);
         setCourses(nextCourses);
@@ -478,19 +541,25 @@ export default function AdminHomeworkForm({ route, navigation }) {
       const nextTeachers = await loadInitialTeachers();
 
       if (isEdit) {
-        const ownerId = Number(homework?.created_by);
+        const ownerId =
+          homework?.created_by != null && homework.created_by !== ''
+            ? Number(homework.created_by)
+            : null;
 
-        const meId = Number(currentUser?.id);
+        const meId = currentUser?.id != null ? Number(currentUser.id) : null;
 
-        const selectedOwnerId = Number.isFinite(ownerId)
-          ? ownerId
-          : Number.isFinite(meId)
-          ? meId
-          : Number(nextTeachers?.[0]?.id);
+        const fallbackTeacherId =
+          nextTeachers.find(item => Number.isInteger(item.id) && item.id > 0)
+            ?.id ?? null;
 
-        if (Number.isFinite(selectedOwnerId)) {
-          setSelectedTeacherId(selectedOwnerId);
-        }
+        const selectedOwnerId =
+          Number.isInteger(ownerId) && ownerId > 0
+            ? ownerId
+            : Number.isInteger(meId) && meId > 0
+            ? meId
+            : fallbackTeacherId;
+
+        setSelectedTeacherId(selectedOwnerId);
 
         const [, attachmentsResponse] = await Promise.all([
           loadTeacherResources(selectedOwnerId, {
@@ -504,7 +573,7 @@ export default function AdminHomeworkForm({ route, navigation }) {
 
         setSelectedClassId(Number(homework?.class_group_id));
 
-        setSelectedCourseId(Number(homework?.course_id));
+        setSelectedCourseIds(getHomeworkCourseIds(homework));
 
         setAttachments(
           Array.isArray(attachmentsResponse?.attachments)
@@ -589,80 +658,27 @@ export default function AdminHomeworkForm({ route, navigation }) {
 
     setSelectedTeacherId(nextTeacherId);
 
+    setTeacherChangedByUser(true);
+
     /*
      * Clear previous teacher's
      * Class and Course selections.
      */
-    setSelectedCourseId(null);
+    setSelectedCourseIds([]);
     setSelectedClassId(null);
 
     await loadTeacherResources(nextTeacherId);
   }
 
-  async function changeCourse(courseId) {
-    const nextCourseId = Number(courseId);
-
-    if (!Number.isFinite(nextCourseId)) {
-      return;
-    }
-
-    const previousTeacherId = Number(selectedTeacherId);
-
-    setSelectedCourseId(nextCourseId);
-
-    try {
-      setResourcesLoading(true);
-
-      const response = await api(
-        `/api/homeworks/teachers-for?course_id=${encodeURIComponent(
-          nextCourseId,
-        )}`,
-      );
-
-      const nextTeachers = (
-        Array.isArray(response?.teachers) ? response.teachers : []
-      )
-        .map(normalizeTeacher)
-        .filter(item => Number.isFinite(item.id));
-
-      setTeachers(nextTeachers);
-
-      const previousTeacherStillExists = nextTeachers.some(
-        item => item.id === previousTeacherId,
-      );
-
-      if (previousTeacherStillExists) {
-        setSelectedTeacherId(previousTeacherId);
-
-        await loadTeacherResources(previousTeacherId, {
-          preserveCourseId: nextCourseId,
-        });
-      } else {
-        setSelectedTeacherId(null);
-
-        await loadTeacherResources(null, {
-          preserveCourseId: nextCourseId,
-        });
-      }
-
-      setSelectedCourseId(nextCourseId);
-    } catch (error) {
-      console.log('Homework teachers-for error:', error);
-
-      Alert.alert(
-        'Homework',
-        error?.message || 'Could not load teachers for this course.',
-      );
-    } finally {
-      setResourcesLoading(false);
-    }
-  }
-
   function changeClass(classId) {
     const nextClassId = Number(classId);
 
-    if (!Number.isFinite(nextClassId)) {
+    if (!Number.isInteger(nextClassId) || nextClassId <= 0) {
       return;
+    }
+
+    if (nextClassId !== selectedClassId) {
+      setSelectedCourseIds([]);
     }
 
     setSelectedClassId(nextClassId);
@@ -940,18 +956,21 @@ export default function AdminHomeworkForm({ route, navigation }) {
       return;
     }
 
-    if (!selectedTeacherId) {
-      Alert.alert('Teacher/Admin', 'Please select a teacher or admin.');
-      return;
-    }
-
-    if (!selectedCourseId) {
-      Alert.alert('Course', 'Please select a course.');
+    if (
+      !Number.isInteger(Number(selectedTeacherId)) ||
+      Number(selectedTeacherId) <= 0
+    ) {
+      Alert.alert('Teacher/Admin', 'Please select a valid teacher or admin.');
       return;
     }
 
     if (!selectedClassId) {
       Alert.alert('Class', 'Please select a class.');
+      return;
+    }
+
+    if (selectedCourseIds.length === 0) {
+      Alert.alert('Subjects', 'Please select at least one subject.');
       return;
     }
 
@@ -965,10 +984,27 @@ export default function AdminHomeworkForm({ route, navigation }) {
       return;
     }
 
+    const subjectIds = [
+      ...new Set(
+        selectedCourseIds
+          .map(Number)
+          .filter(id => Number.isInteger(id) && id > 0),
+      ),
+    ];
+
+    if (subjectIds.length === 0) {
+      Alert.alert('Subjects', 'Please select at least one valid subject.');
+      return;
+    }
+
     const payload = {
       class_group_id: Number(selectedClassId),
 
-      course_id: Number(selectedCourseId),
+      // Primary subject for backward compatibility
+      course_id: subjectIds[0],
+
+      // All selected subjects
+      course_ids: subjectIds,
 
       ends_at: dueAt.toISOString(),
 
@@ -977,9 +1013,13 @@ export default function AdminHomeworkForm({ route, navigation }) {
       is_online: true,
 
       name: trimmedTitle,
-
-      teacher_id: Number(selectedTeacherId),
     };
+
+    // The confirmed Create API example does not include teacher_id.
+    // Keep teacher_id only for Edit until its updated API is confirmed.
+    if (!isEdit || teacherChangedByUser) {
+      payload.teacher_id = Number(selectedTeacherId);
+    }
 
     try {
       setSaving(true);
@@ -1018,11 +1058,15 @@ export default function AdminHomeworkForm({ route, navigation }) {
 
         console.log('Create homework response:', response);
 
+        if (response?.ok !== true) {
+          throw new Error('Could not create the homework.');
+        }
+
         targetHomeworkId = Number(response?.homework_id ?? response?.id);
 
-        if (!Number.isFinite(targetHomeworkId)) {
+        if (!Number.isInteger(targetHomeworkId) || targetHomeworkId <= 0) {
           throw new Error(
-            'Homework was created but no homework ID was returned.',
+            'Homework was created but no valid homework ID was returned.',
           );
         }
       }
@@ -1120,7 +1164,7 @@ export default function AdminHomeworkForm({ route, navigation }) {
             {selectedTeacherLabel}
           </Text>
 
-          <Text style={styles.selectArrow}>⌄</Text>
+          <Ionicons name={'chevron-down'} size={15} color={'#FFFFFF'} />
         </Pressable>
 
         <Text style={styles.fieldLabel}>Homework Title</Text>
@@ -1133,31 +1177,6 @@ export default function AdminHomeworkForm({ route, navigation }) {
           editable={!saving}
           style={styles.textInput}
         />
-
-        <Text style={styles.fieldLabel}>Course</Text>
-
-        <Pressable
-          onPress={() => setCourseModalVisible(true)}
-          disabled={saving || resourcesLoading || courses.length === 0}
-          style={({ pressed }) => [
-            styles.selectField,
-
-            (saving || resourcesLoading || courses.length === 0) &&
-              styles.controlDisabled,
-
-            pressed && !saving && styles.controlPressed,
-          ]}
-        >
-          <Text numberOfLines={1} style={styles.selectFieldText}>
-            {selectedCourseLabel}
-          </Text>
-
-          {resourcesLoading ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
-          ) : (
-            <Text style={styles.selectArrow}>⌄</Text>
-          )}
-        </Pressable>
 
         <Text style={styles.fieldLabel}>Class</Text>
 
@@ -1177,8 +1196,80 @@ export default function AdminHomeworkForm({ route, navigation }) {
             {selectedClassLabel}
           </Text>
 
-          <Text style={styles.selectArrow}>⌄</Text>
+          <Ionicons name={'chevron-down'} size={15} color={'#FFFFFF'} />
         </Pressable>
+
+        <Text style={styles.fieldLabel}>Subjects (one or more)</Text>
+
+        <Pressable
+          onPress={() => setCourseModalVisible(true)}
+          disabled={
+            saving ||
+            resourcesLoading ||
+            !selectedClassId ||
+            courses.length === 0
+          }
+          style={({ pressed }) => [
+            styles.selectField,
+            (saving ||
+              resourcesLoading ||
+              !selectedClassId ||
+              courses.length === 0) &&
+              styles.controlDisabled,
+            pressed && !saving && styles.controlPressed,
+          ]}
+        >
+          <Text
+            numberOfLines={1}
+            style={[
+              styles.selectFieldText,
+              selectedCourseIds.length === 0 && {
+                color: '#94A3B8',
+              },
+            ]}
+          >
+            {selectedClassId ? selectedCourseLabel : 'Select a class first'}
+          </Text>
+
+          {resourcesLoading ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Ionicons name="chevron-down" size={15} color="#FFFFFF" />
+          )}
+        </Pressable>
+
+        {selectedCourseIds.length > 0 && (
+          <View style={styles.selectedSubjectsWrap}>
+            {selectedCourseIds.map(courseId => {
+              const subject = courses.find(
+                item => Number(item.id) === Number(courseId),
+              );
+
+              return (
+                <Pressable
+                  key={`subject-${courseId}`}
+                  onPress={() => toggleSubject(courseId)}
+                  disabled={saving}
+                  style={styles.selectedSubjectChip}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove ${subject?.title || 'subject'}`}
+                >
+                  <Text style={styles.selectedSubjectText} numberOfLines={1}>
+                    {subject?.title ||
+                      (selectedCourseIds.length === 1
+                        ? homework?.course_title
+                        : null) ||
+                      `Subject ${courseId}`}
+                  </Text>
+
+                  <View style={styles.selectedSubjectRemove}>
+                    <Ionicons name="close" size={13} color="#F87171" />
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
 
         <Text style={styles.fieldLabel}>Due (End) At</Text>
 
@@ -1391,13 +1482,14 @@ export default function AdminHomeworkForm({ route, navigation }) {
 
       <SelectModal
         visible={courseModalVisible}
-        title="Course"
+        title="Select Subjects"
         options={courseOptions}
-        selectedValue={selectedCourseId}
-        onSelect={changeCourse}
+        selectedValues={selectedCourseIds}
+        multiple
+        onSelect={toggleSubject}
         onClose={() => setCourseModalVisible(false)}
         loading={resourcesLoading}
-        emptyText="No courses are available for this teacher."
+        emptyText="No subjects are available for this teacher."
       />
 
       <SelectModal

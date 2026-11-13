@@ -29,6 +29,10 @@ function normalizeClass(item) {
   return {
     id: Number(item?.id),
     name: String(item?.name || 'Unnamed class'),
+    className: String(item?.class_name || item?.name || 'Unnamed class'),
+    section: item?.section == null ? '' : String(item.section),
+    classLevelId:
+      item?.class_level_id == null ? null : Number(item.class_level_id),
   };
 }
 
@@ -164,6 +168,10 @@ export default function AdminAddExamPaper({ route, navigation }) {
   const [selectedClassId, setSelectedClassId] = useState(null);
   const [selectedCourseId, setSelectedCourseId] = useState(null);
 
+  const [selectedClassLevelKey, setSelectedClassLevelKey] = useState(null);
+
+  const [selectedSectionIds, setSelectedSectionIds] = useState([]);
+
   const [isOnline, setIsOnline] = useState(true);
   const [totalMarks, setTotalMarks] = useState('100');
   const [additionalItems, setAdditionalItems] = useState([]);
@@ -190,6 +198,9 @@ export default function AdminAddExamPaper({ route, navigation }) {
   const [resourcesLoading, setResourcesLoading] = useState(false);
   const [creating, setCreating] = useState(false);
 
+  const [currentUserRole, setCurrentUserRole] = useState('');
+  const [completedSectionIds, setCompletedSectionIds] = useState([]);
+
   const teacherOptions = useMemo(
     () =>
       teachers.map(item => ({
@@ -199,14 +210,49 @@ export default function AdminAddExamPaper({ route, navigation }) {
     [teachers],
   );
 
+  const groupedClasses = useMemo(() => {
+    const groups = new Map();
+
+    classes.forEach(item => {
+      const key =
+        item.classLevelId != null
+          ? `level:${item.classLevelId}`
+          : `name:${item.className.trim().toLowerCase()}`;
+
+      if (!groups.has(key)) {
+        groups.set(key, {
+          key,
+          label: item.className,
+          sections: [],
+        });
+      }
+
+      groups.get(key).sections.push({
+        id: item.id,
+        label: item.section || 'No section',
+        name: item.name,
+      });
+    });
+
+    return Array.from(groups.values());
+  }, [classes]);
+
   const classOptions = useMemo(
     () =>
-      classes.map(item => ({
-        value: item.id,
-        label: item.name,
+      groupedClasses.map(group => ({
+        value: group.key,
+        label: group.label,
       })),
-    [classes],
+    [groupedClasses],
   );
+
+  const selectedClassGroup = useMemo(
+    () =>
+      groupedClasses.find(group => group.key === selectedClassLevelKey) || null,
+    [groupedClasses, selectedClassLevelKey],
+  );
+
+  const selectedClassLabel = selectedClassGroup?.label || 'Select...';
 
   const courseOptions = useMemo(
     () =>
@@ -222,12 +268,6 @@ export default function AdminAddExamPaper({ route, navigation }) {
 
     return teacher ? `${teacher.name} (${teacher.role})` : 'Select...';
   }, [selectedTeacherId, teachers]);
-
-  const selectedClassLabel = useMemo(
-    () =>
-      classes.find(item => item.id === selectedClassId)?.name || 'Select...',
-    [classes, selectedClassId],
-  );
 
   const selectedCourseLabel = useMemo(
     () =>
@@ -344,34 +384,65 @@ export default function AdminAddExamPaper({ route, navigation }) {
   );
 
   const loadInitialData = useCallback(async () => {
-    if (!Number.isFinite(examinationId)) {
-      Alert.alert('Add Exam Paper', 'Examination ID is missing.', [
-        {
-          text: 'OK',
-          onPress: () => navigation.goBack(),
-        },
-      ]);
+    if (!Number.isFinite(examinationId) || examinationId <= 0) {
+      Alert.alert('Add Exam Paper', 'Examination ID is missing.');
       return;
     }
 
-    if (!Number.isFinite(currentUserId)) {
-      Alert.alert('Add Exam Paper', 'Current user ID is missing.', [
-        {
-          text: 'OK',
-          onPress: () => navigation.goBack(),
-        },
-      ]);
+    if (!Number.isFinite(currentUserId) || currentUserId <= 0) {
+      Alert.alert('Add Exam Paper', 'Current user ID is missing.');
       return;
     }
 
     try {
       setLoading(true);
 
-      const [examinationsResponse, combosResponse, resourcesResponse] =
+      const meResponse = await api('/api/me');
+
+      const role = String(
+        meResponse?.actual_role ||
+          meResponse?.role ||
+          meResponse?.primary_role ||
+          '',
+      )
+        .trim()
+        .toLowerCase()
+        .replace(/[\s-]+/g, '_');
+
+      const allowedRoles = ['teacher', 'admin', 'super_admin'];
+
+      if (!allowedRoles.includes(role)) {
+        throw new Error('Access denied');
+      }
+
+      if (Number(meResponse?.id) !== currentUserId) {
+        throw new Error('Current user does not match the logged-in account.');
+      }
+
+      setCurrentUserRole(role);
+
+      const fetchNamed = async (label, url) => {
+        try {
+          return await api(url);
+        } catch (error) {
+          console.log(`[ADD EXAM PAPER] ${label} failed`, {
+            status: error?.status,
+            message: error?.message,
+          });
+
+          throw new Error(`${label}: ${error?.message || 'Request failed'}`);
+        }
+      };
+
+      // These endpoints are confirmed from your web requests.
+      const [examinationsResponse, combosResponse, metaResponse] =
         await Promise.all([
-          api('/api/examinations/v1/options'),
-          api(`/api/examinations/v1/${examinationId}/combos`),
-          api(`/api/exams/resources-for-teacher/${currentUserId}`),
+          fetchNamed('Examination Options', '/api/examinations/v1/options'),
+          fetchNamed(
+            'Examination Combos',
+            `/api/examinations/v1/${examinationId}/combos`,
+          ),
+          fetchNamed('Exam Meta', '/api/exams/meta'),
         ]);
 
       setExaminationOptions(
@@ -384,29 +455,66 @@ export default function AdminAddExamPaper({ route, navigation }) {
         Array.isArray(combosResponse?.combos) ? combosResponse.combos : [],
       );
 
-      setClasses(
-        (Array.isArray(resourcesResponse?.classes)
-          ? resourcesResponse.classes
-          : []
-        )
-          .map(normalizeClass)
-          .filter(item => Number.isFinite(item.id)),
-      );
+      const metaClasses = (
+        Array.isArray(metaResponse?.classes) ? metaResponse.classes : []
+      )
+        .map(normalizeClass)
+        .filter(item => Number.isFinite(item.id));
 
-      setCourses(
-        (Array.isArray(resourcesResponse?.courses)
-          ? resourcesResponse.courses
-          : []
-        )
-          .map(normalizeCourse)
-          .filter(item => Number.isFinite(item.id)),
-      );
+      const metaCourses = (
+        Array.isArray(metaResponse?.courses) ? metaResponse.courses : []
+      )
+        .map(normalizeCourse)
+        .filter(item => Number.isFinite(item.id));
+
+      if (role === 'teacher') {
+        // Teacher uses permitted resources from /api/exams/meta.
+        setTeachers([
+          normalizeTeacher({
+            id: meResponse.id,
+            name: meResponse.name,
+            role: 'teacher',
+          }),
+        ]);
+
+        setSelectedTeacherId(Number(meResponse.id));
+
+        setClasses(metaClasses);
+        setCourses(metaCourses);
+      } else {
+        // Keep existing Admin/Super Admin resource behavior.
+        const resourcesResponse = await fetchNamed(
+          'Teacher Resources',
+          `/api/exams/resources-for-teacher/${currentUserId}`,
+        );
+
+        setClasses(
+          (Array.isArray(resourcesResponse?.classes)
+            ? resourcesResponse.classes
+            : []
+          )
+            .map(normalizeClass)
+            .filter(item => Number.isFinite(item.id)),
+        );
+
+        setCourses(
+          (Array.isArray(resourcesResponse?.courses)
+            ? resourcesResponse.courses
+            : []
+          )
+            .map(normalizeCourse)
+            .filter(item => Number.isFinite(item.id)),
+        );
+      }
 
       navigation.setOptions({
         title: 'Add Exam Paper',
       });
     } catch (error) {
-      console.log('Add exam paper initialization error:', error);
+      console.log('[ADD EXAM PAPER INITIALIZATION ERROR]', {
+        status: error?.status,
+        message: error?.message,
+      });
 
       Alert.alert(
         'Add Exam Paper',
@@ -454,11 +562,11 @@ export default function AdminAddExamPaper({ route, navigation }) {
       setClasses(nextClasses);
       setCourses(nextCourses);
 
-      setSelectedClassId(currentClassId =>
-        nextClasses.some(item => item.id === currentClassId)
-          ? currentClassId
-          : null,
-      );
+      setSelectedClassId(null);
+      setSelectedClassLevelKey(null);
+      setSelectedSectionIds([]);
+      setTemplates([]);
+      setSelectedTemplateId(null);
 
       setSelectedCourseId(currentCourseId =>
         nextCourses.some(item => item.id === currentCourseId)
@@ -485,8 +593,20 @@ export default function AdminAddExamPaper({ route, navigation }) {
     }
 
     setSelectedCourseId(nextCourseId);
+
     setSelectedClassId(null);
+    setSelectedClassLevelKey(null);
+    setSelectedSectionIds([]);
+
     setTemplates([]);
+    setSelectedTemplateId(null);
+
+    if (currentUserRole === 'teacher') {
+      // Teacher remains selected.
+      // Class/Course options already came from /api/exams/meta.
+      setSelectedTeacherId(currentUserId);
+      return;
+    }
 
     try {
       setResourcesLoading(true);
@@ -512,6 +632,30 @@ export default function AdminAddExamPaper({ route, navigation }) {
       if (!currentTeacherStillAvailable) {
         setSelectedTeacherId(null);
         setClasses([]);
+      } else {
+        // Refresh the selected teacher's permitted classes
+        // for the updated course selection.
+        const selectedTeacherResources = await api(
+          `/api/exams/resources-for-teacher/${selectedTeacherId}`,
+        );
+
+        setClasses(
+          (Array.isArray(selectedTeacherResources?.classes)
+            ? selectedTeacherResources.classes
+            : []
+          )
+            .map(normalizeClass)
+            .filter(item => Number.isFinite(item.id)),
+        );
+
+        setCourses(
+          (Array.isArray(selectedTeacherResources?.courses)
+            ? selectedTeacherResources.courses
+            : []
+          )
+            .map(normalizeCourse)
+            .filter(item => Number.isFinite(item.id)),
+        );
       }
     } catch (error) {
       console.log('Teachers for course load error:', error);
@@ -525,23 +669,38 @@ export default function AdminAddExamPaper({ route, navigation }) {
     }
   }
 
-  async function changeClass(classId) {
-    const nextClassId = Number(classId);
-
-    if (!Number.isFinite(nextClassId)) {
-      return;
-    }
-
+  function changeClass(classLevelKey) {
     if (!selectedCourseId) {
       Alert.alert('Course required', 'Please select a course first.');
       return;
     }
 
-    setSelectedClassId(nextClassId);
+    setSelectedClassLevelKey(classLevelKey);
+    setSelectedSectionIds([]);
+    setSelectedClassId(null);
+    setTemplates([]);
+    setSelectedTemplateId(null);
+  }
 
-    await loadTemplates(nextClassId, selectedCourseId, {
-      openModal: true,
-    });
+  async function toggleSection(classGroupId) {
+    const id = Number(classGroupId);
+
+    const nextIds = selectedSectionIds.includes(id)
+      ? selectedSectionIds.filter(item => item !== id)
+      : [...selectedSectionIds, id];
+
+    setSelectedSectionIds(nextIds);
+    setSelectedClassId(nextIds.length === 1 ? nextIds[0] : null);
+
+    // Existing templates belong to a single class_group_id.
+    setTemplates([]);
+    setSelectedTemplateId(null);
+
+    if (nextIds.length === 1 && selectedCourseId) {
+      await loadTemplates(nextIds[0], selectedCourseId, {
+        openModal: true,
+      });
+    }
   }
 
   function addAdditionalItem() {
@@ -568,6 +727,13 @@ export default function AdminAddExamPaper({ route, navigation }) {
   }
 
   function saveAsTemplate() {
+    if (selectedSectionIds.length !== 1) {
+      Alert.alert(
+        'Select One Section',
+        'Select exactly one section to save an exam template.',
+      );
+      return;
+    }
     if (!selectedCourseId) {
       Alert.alert('Course required', 'Please select a course first.');
       return;
@@ -709,10 +875,9 @@ export default function AdminAddExamPaper({ route, navigation }) {
   }
 
   async function createExamPaper() {
-    if (creating) {
-      return;
-    }
+    if (creating) return;
 
+    // Teacher validation
     if (!selectedTeacherId) {
       Alert.alert(
         'Teacher/Admin required',
@@ -721,16 +886,22 @@ export default function AdminAddExamPaper({ route, navigation }) {
       return;
     }
 
+    // Course validation
     if (!selectedCourseId) {
       Alert.alert('Course required', 'Please select a course.');
       return;
     }
 
-    if (!selectedClassId) {
-      Alert.alert('Class required', 'Please select a class.');
+    // Class and sections validation
+    if (!selectedClassLevelKey || selectedSectionIds.length === 0) {
+      Alert.alert(
+        'Sections required',
+        'Please select a class and at least one section.',
+      );
       return;
     }
 
+    // Marks validation
     if (totalMarksNumber <= 0) {
       Alert.alert(
         'Invalid marks',
@@ -742,8 +913,13 @@ export default function AdminAddExamPaper({ route, navigation }) {
     if (additionalMarks > totalMarksNumber) {
       Alert.alert(
         'Invalid additional marks',
-        'Additional requirement marks cannot exceed the exam total marks.',
+        'Additional requirement marks cannot exceed total marks.',
       );
+      return;
+    }
+
+    if (!Number.isInteger(examinationId) || examinationId <= 0) {
+      Alert.alert('Invalid Examination', 'Examination ID is missing.');
       return;
     }
 
@@ -756,22 +932,24 @@ export default function AdminAddExamPaper({ route, navigation }) {
 
     const nowIso = new Date().toISOString();
 
+    const classGroupIds = [...new Set(selectedSectionIds.map(Number))];
+
+    // One API request for all selected sections.
     const payload = {
-      class_group_id: selectedClassId,
-      course_id: selectedCourseId,
+      class_group_id: classGroupIds[0],
+      course_id: Number(selectedCourseId),
       ends_at: nowIso,
       examination_id: examinationId,
       is_online: isOnline,
+      class_group_ids: classGroupIds,
       starts_at: nowIso,
       total_marks: totalMarksNumber,
       extras,
-      teacher_id: selectedTeacherId,
+      teacher_id: Number(selectedTeacherId),
     };
 
     try {
       setCreating(true);
-
-      console.log('Create exam paper payload:', payload);
 
       const response = await api('/api/exams', {
         method: 'POST',
@@ -781,35 +959,28 @@ export default function AdminAddExamPaper({ route, navigation }) {
         body: JSON.stringify(payload),
       });
 
-      const createdExamId = Number(response?.id ?? response?.exam_id);
+      const createdExamId = Number(response?.exam_id ?? response?.id);
 
-      if (!Number.isFinite(createdExamId)) {
-        throw new Error('Exam paper was created but no exam ID was returned.');
+      if (!Number.isInteger(createdExamId) || createdExamId <= 0) {
+        throw new Error('Exam paper creation was not confirmed.');
       }
 
-      const extrasResponse = await api(`/api/exams/${createdExamId}/extras`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      Alert.alert('Exam Paper Created', 'Exam paper created successfully.', [
+        {
+          text: 'OK',
+          onPress: () => navigation.goBack(),
         },
-        body: JSON.stringify({
-          extras,
-        }),
+      ]);
+    } catch (error) {
+      console.log('[CREATE EXAM PAPER ERROR]', {
+        status: error?.status,
+        message: error?.message,
       });
 
-      if (extrasResponse?.ok !== true) {
-        throw new Error(
-          'Exam paper was created, but additional requirements could not be saved.',
-        );
-      }
-
-      navigation.goBack();
-    } catch (error) {
-      console.log('Create exam paper error:', error);
-
       Alert.alert(
-        'Create failed',
-        error?.message || 'Could not create the exam paper.',
+        'Create Failed',
+        error?.message ||
+          'Unable to create exam paper. Check the exam papers list before retrying.',
       );
     } finally {
       setCreating(false);
@@ -912,6 +1083,51 @@ export default function AdminAddExamPaper({ route, navigation }) {
             <Text style={styles.selectArrow}>⌄</Text>
           )}
         </Pressable>
+
+        {/* Sections Multi Select */}
+        {selectedClassGroup && (
+          <View style={styles.sectionsContainer}>
+            <Text style={styles.fieldLabel}>
+              Sections (select one or more) *
+            </Text>
+
+            <View style={styles.sectionsRow}>
+              {selectedClassGroup.sections.map(section => {
+                const selected = selectedSectionIds.includes(section.id);
+
+                return (
+                  <Pressable
+                    key={String(section.id)}
+                    onPress={() => toggleSection(section.id)}
+                    disabled={creating}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: selected }}
+                    style={({ pressed }) => [
+                      styles.sectionChip,
+                      selected && styles.sectionChipSelected,
+                      pressed && styles.controlPressed,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.sectionChipText,
+                        selected && styles.sectionChipTextSelected,
+                      ]}
+                    >
+                      {section.label}
+                    </Text>
+
+                    {selected && <Text style={styles.sectionCheckIcon}>✓</Text>}
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <Text style={styles.sectionHelper}>
+              {selectedSectionIds.length} section(s) selected
+            </Text>
+          </View>
+        )}
 
         <Text style={styles.fieldLabel}>Delivery</Text>
         <Pressable
@@ -1088,12 +1304,13 @@ export default function AdminAddExamPaper({ route, navigation }) {
         visible={classModalVisible}
         title="Class"
         options={classOptions}
-        selectedValue={selectedClassId}
+        selectedValue={selectedClassLevelKey}
         onSelect={changeClass}
         onClose={() => setClassModalVisible(false)}
         loading={resourcesLoading}
-        emptyText="No classes are available for this teacher."
+        emptyText="No classes available."
       />
+
       <Modal
         transparent
         visible={saveTemplateModalVisible}

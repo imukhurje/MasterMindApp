@@ -36,9 +36,9 @@ export const styles = StyleSheet.create({
   },
 
   scrollContent: {
-    padding: 15,
-
-    paddingBottom: 40,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 35,
   },
 
   /*
@@ -47,51 +47,33 @@ export const styles = StyleSheet.create({
 
   topRow: {
     flexDirection: 'row',
-
     alignItems: 'center',
-
     justifyContent: 'space-between',
-
-    flexWrap: 'wrap',
-
-    gap: 10,
-
-    marginBottom: 16,
+    gap: 8,
+    marginBottom: 12,
   },
 
   tabsContainer: {
     flexDirection: 'row',
-
     alignItems: 'center',
-
-    flexWrap: 'wrap',
-
-    gap: 8,
+    flexShrink: 1,
+    gap: 7,
   },
 
   tabButton: {
-    minHeight: 42,
-
+    minHeight: 38,
     backgroundColor: COLORS.BLUE,
-
-    borderRadius: 10,
-
-    paddingHorizontal: 14,
-
+    borderRadius: 9,
+    paddingHorizontal: 10,
     flexDirection: 'row',
-
     alignItems: 'center',
-
     justifyContent: 'center',
-
-    gap: 7,
+    gap: 5,
   },
 
   tabButtonActive: {
     backgroundColor: COLORS.ACTIVE,
-
-    borderWidth: 2,
-
+    borderWidth: 1,
     borderColor: '#A8EDFF',
   },
 
@@ -136,17 +118,16 @@ export const styles = StyleSheet.create({
   },
 
   refreshButton: {
-    minHeight: 40,
-
+    minHeight: 38,
     backgroundColor: COLORS.CARD_DARK,
-
-    borderRadius: 10,
-
-    paddingHorizontal: 14,
-
+    borderRadius: 9,
+    paddingHorizontal: 9,
     alignItems: 'center',
-
     justifyContent: 'center',
+  },
+
+  cardsContainer: {
+    gap: 10,
   },
 
   refreshButtonText: {
@@ -161,18 +142,19 @@ export const styles = StyleSheet.create({
    * Cards
    */
 
-  cardsContainer: {
-    gap: 14,
-  },
-
   resultCard: {
     backgroundColor: COLORS.CARD,
+    borderWidth: 1,
+    borderColor: COLORS.BORDER,
+    borderRadius: 14,
+    padding: 12,
+  },
 
-    borderRadius: 18,
-
-    padding: 17,
-
-    minHeight: 190,
+  resultTitle: {
+    color: COLORS.TEXT,
+    fontSize: 13,
+    fontWeight: '900',
+    lineHeight: 19,
   },
 
   cardTopRow: {
@@ -193,76 +175,44 @@ export const styles = StyleSheet.create({
     minWidth: 220,
   },
 
-  resultTitle: {
-    color: COLORS.TEXT,
-
-    fontSize: 16,
-
-    fontWeight: '900',
-
-    lineHeight: 21,
-  },
-
   dateRangeText: {
     color: COLORS.TEXT,
-
-    fontSize: 12,
-
+    fontSize: 11,
     fontWeight: '800',
-
-    marginTop: 8,
-
-    lineHeight: 18,
+    lineHeight: 17,
+    marginTop: 10,
   },
 
   windowText: {
     color: COLORS.MUTED,
-
-    fontSize: 11,
-
-    marginTop: 3,
+    fontSize: 10,
+    marginTop: 4,
   },
 
   tagsContainer: {
     flexDirection: 'row',
-
-    alignItems: 'center',
-
-    justifyContent: 'flex-end',
-
     flexWrap: 'wrap',
-
+    alignItems: 'center',
     gap: 6,
-
-    maxWidth: '45%',
+    marginTop: 9,
   },
 
   tagBadge: {
-    minHeight: 26,
-
+    minHeight: 23,
+    maxWidth: '100%',
     backgroundColor: COLORS.CARD_DARK,
-
     borderWidth: 1,
-
     borderColor: COLORS.BORDER,
-
-    borderRadius: 13,
-
-    paddingHorizontal: 9,
-
+    borderRadius: 12,
+    paddingHorizontal: 8,
     alignItems: 'center',
-
     justifyContent: 'center',
   },
 
   tagText: {
     color: COLORS.TEXT,
-
     fontSize: 9,
-
     fontWeight: '600',
-
-    maxWidth: 150,
   },
 
   /*
@@ -271,41 +221,37 @@ export const styles = StyleSheet.create({
 
   cardBottomRow: {
     flexDirection: 'row',
-
     alignItems: 'center',
-
     justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(52, 115, 160, 0.42)',
+  },
 
+  cardStatsGroup: {
+    flex: 1,
+    flexDirection: 'row',
     flexWrap: 'wrap',
-
-    gap: 12,
-
-    marginTop: 14,
+    alignItems: 'center',
+    gap: 6,
   },
 
   statBadge: {
-    minHeight: 27,
-
+    minHeight: 24,
     backgroundColor: COLORS.CARD_DARK,
-
     borderWidth: 1,
-
     borderColor: COLORS.BORDER,
-
-    borderRadius: 14,
-
-    paddingHorizontal: 9,
-
+    borderRadius: 12,
+    paddingHorizontal: 8,
     alignItems: 'center',
-
     justifyContent: 'center',
   },
 
   statText: {
     color: COLORS.TEXT,
-
     fontSize: 9,
-
     fontWeight: '600',
   },
 
@@ -344,31 +290,32 @@ export const styles = StyleSheet.create({
   },
 
   openButton: {
-    minWidth: 72,
-
-    minHeight: 40,
-
+    minWidth: 68,
+    minHeight: 38,
     backgroundColor: COLORS.CARD_DARK,
-
     borderWidth: 1,
-
     borderColor: COLORS.BORDER,
-
-    borderRadius: 10,
-
-    paddingHorizontal: 14,
-
+    borderRadius: 9,
+    paddingHorizontal: 12,
     alignItems: 'center',
-
     justifyContent: 'center',
   },
 
   openButtonText: {
     color: COLORS.TEXT,
-
-    fontSize: 12,
-
+    fontSize: 11,
     fontWeight: '900',
+  },
+
+  cardTypeRow: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+  },
+
+  cardTypeText: {
+    color: COLORS.MUTED,
+    fontSize: 9,
+    fontWeight: '600',
   },
 
   /*

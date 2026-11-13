@@ -12,6 +12,7 @@ import {
   TextInput,
   Platform,
   AppState,
+  Modal,
 } from 'react-native';
 
 import { WebView } from 'react-native-webview';
@@ -166,6 +167,14 @@ export default function ExamHall() {
   const [lockReason, setLockReason] = useState(null);
 
   const [examCompleted, setExamCompleted] = useState(false);
+  const [alreadySubmitted, setAlreadySubmitted] = useState(false);
+  const [submittingExam, setSubmittingExam] = useState(false);
+
+  const [reviewVisible, setReviewVisible] = useState(false);
+
+  const [examReview, setExamReview] = useState([]);
+
+  const submissionInFlightRef = useRef(false);
 
   const [deletingFileId, setDeletingFileId] = useState(null);
 
@@ -508,6 +517,27 @@ export default function ExamHall() {
         Boolean(s?.attempt?.locked_at) ||
         Boolean(s?.attempt?.lock_reason);
 
+      const isSubmitted = st === 'submitted' || st === 'auto_submitted';
+
+      if (isSubmitted) {
+        setAlreadySubmitted(true);
+
+        setFocusLocked(false);
+        focusLockedRef.current = false;
+
+        setExamCompleted(false);
+        setCurrent(null);
+
+        intentionalExitRef.current = true;
+        examSessionActiveRef.current = false;
+
+        setRemain('--');
+
+        return s;
+      }
+
+      setAlreadySubmitted(false);
+
       /*
        * Locked session.
        */
@@ -565,35 +595,6 @@ export default function ExamHall() {
         return null;
       }
 
-      /*
-       * Exam has started, but this attempt
-       * has already been submitted.
-       */
-      if (
-        s?.started === true &&
-        (st === 'submitted' || st === 'auto_submitted')
-      ) {
-        intentionalExitRef.current = true;
-        examSessionActiveRef.current = false;
-
-        Alert.alert('Exam finished', 'This attempt is closed.', [
-          {
-            text: 'OK',
-            onPress: () =>
-              navigation.reset({
-                index: 0,
-                routes: [
-                  {
-                    name: 'Exams',
-                  },
-                ],
-              }),
-          },
-        ]);
-
-        return null;
-      }
-
       if (s.question) {
         hydrateSavedAnswer(s.question);
 
@@ -608,59 +609,60 @@ export default function ExamHall() {
   );
 
   const initializeExamHall = useCallback(async () => {
-    /*
-     * 1. Hall state
-     */
+    // 1. Load the first question and attempt state.
     const state = await loadState(1);
 
     if (!state) {
       return null;
     }
 
-    /*
-     * Stop initialization for a locked attempt.
-     */
-    const attemptStatus = state?.attempt?.status;
+    const attemptStatus = String(state?.attempt?.status || '').toLowerCase();
 
-    if (
+    // Stop if the attempt is already locked or closed.
+    const isClosed =
+      state?.ended === true ||
       attemptStatus === 'focus_locked' ||
-      state?.attempt?.locked_at ||
-      state?.attempt?.lock_reason
-    ) {
+      attemptStatus === 'submitted' ||
+      attemptStatus === 'auto_submitted' ||
+      Boolean(state?.attempt?.locked_at) ||
+      Boolean(state?.attempt?.lock_reason);
+
+    if (isClosed) {
       return state;
     }
 
-    /*
-     * 2. Logged-in user
-     */
-    const meResponse = await api('/api/me');
-
-    setMe(meResponse || null);
-
-    /*
-     * 3. Start / confirm the attempt.
-     *
-     * For your sample hall state,
-     * started=true, ended=false,
-     * so this request runs immediately.
-     */
-    if (state?.started === true && state?.ended !== true) {
+    // 2. Start or confirm the active exam attempt.
+    if (state.started === true) {
       await ensureExamStarted();
     }
 
-    /*
-     * 4. Load files for current question.
-     */
+    // 3. Load the logged-in user without blocking the exam.
+    try {
+      const meResponse = await api('/api/me');
+      setMe(meResponse || null);
+    } catch (error) {
+      console.log('[EXAM HALL ME ERROR]', error?.message);
+    }
+
+    // 4. Load current question attachments.
     if (state?.question?.id) {
       await fetchAnswerFiles(state.question.id);
     } else {
       setAnswerFiles([]);
     }
 
-    /*
-     * This attempt is now actively being taken.
-     */
-    if (state?.started && !state?.ended) {
+    // 5. Activate examination focus monitoring.
+    const status = String(state?.attempt?.status || '').toLowerCase();
+
+    if (
+      state.started === true &&
+      !state.ended &&
+      status !== 'submitted' &&
+      status !== 'auto_submitted' &&
+      status !== 'focus_locked' &&
+      !state?.attempt?.locked_at &&
+      !state?.attempt?.lock_reason
+    ) {
       examSessionActiveRef.current = true;
     }
 
@@ -697,17 +699,19 @@ export default function ExamHall() {
       await initEcho();
     } catch (e) {
       console.warn('[Echo] init failed (continuing)', e?.message || e);
-      return () => {}; // DO NOT try to join if init failed
+      return () => {};
     }
 
     return joinExamChannel(examId, {
       started: async () => {
         setStarted(true);
+
         try {
           await ensureExamStarted();
           await loadState(1);
         } catch {}
       },
+
       ended: () => {
         autoSubmit();
       },
@@ -732,7 +736,12 @@ export default function ExamHall() {
         }
       }
 
-      if (started && !ended) {
+      if (
+        started &&
+        !ended &&
+        !alreadySubmitted &&
+        !intentionalExitRef.current
+      ) {
         const ms = endsAt - now;
         setRemain(ms > 0 ? Math.max(0, Math.ceil(ms / 1000)) + ' s' : '0 s');
         if (ms <= 0) {
@@ -999,7 +1008,10 @@ export default function ExamHall() {
     }
     try {
       const rec = answersRef.current.get(String(current.id)) || {};
-      const payload = { question_id: current.id };
+      const payload = {
+        question_id: current.id,
+        is_marked: Boolean(current?.is_marked ?? false),
+      };
       if (isSingle(current.type))
         payload.selected_options = rec.single ? [String(rec.single)] : [];
       else if (isMulti(current.type))
@@ -1007,10 +1019,14 @@ export default function ExamHall() {
           ? rec.multi.map(String)
           : [];
       else payload.text_answer = rec.text || '';
-      await api(`/api/exams/${examId}/answers`, {
+      const response = await api(`/api/exams/${examId}/answers`, {
         method: 'POST',
         body: JSON.stringify(payload),
       });
+
+      if (response?.ok !== true) {
+        throw new Error('Answer could not be saved.');
+      }
       showOk('Answer saved.');
 
       // Last question completed.
@@ -1039,18 +1055,132 @@ export default function ExamHall() {
     }
   };
 
-  const autoSubmit = async () => {
+  const submitAnswerSheet = async () => {
+    if (submissionInFlightRef.current || focusLockedRef.current || ended) {
+      return;
+    }
+
+    submissionInFlightRef.current = true;
+
     try {
-      await api(`/api/exams/${examId}/submit`, {
-        method: 'POST',
-        body: JSON.stringify({}),
+      setSubmittingExam(true);
+
+      const response = await api(
+        `/api/exams/${encodeURIComponent(examId)}/submit`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({}),
+        },
+      );
+
+      if (response?.ok !== true) {
+        throw new Error('Could not submit the answer sheet.');
+      }
+
+      // The server has accepted the final submission.
+      // Stop focus monitoring and exam countdown submission.
+      intentionalExitRef.current = true;
+      examSessionActiveRef.current = false;
+
+      setEnded(true);
+
+      const review = Array.isArray(response?.review) ? response.review : [];
+
+      setExamReview(review);
+
+      // Show the review only after successful submission.
+      setReviewVisible(true);
+    } catch (error) {
+      console.log('[EXAM MANUAL SUBMIT ERROR]', {
+        message: error?.message,
+        status: error?.status,
+        payload: error?.payload,
       });
+
+      showErr(
+        error?.payload?.message ||
+          error?.message ||
+          'Failed to submit the answer sheet.',
+      );
+    } finally {
+      submissionInFlightRef.current = false;
+      setSubmittingExam(false);
+    }
+  };
+
+  const confirmSubmitAnswerSheet = () => {
+    if (submittingExam || submissionInFlightRef.current) {
+      return;
+    }
+
+    Alert.alert(
+      'Submit answer sheet',
+      'Submit your answer sheet? You will not be able to edit further.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Submit',
+          onPress: submitAnswerSheet,
+        },
+      ],
+      {
+        cancelable: true,
+      },
+    );
+  };
+
+  const autoSubmit = async () => {
+    if (
+      submissionInFlightRef.current ||
+      intentionalExitRef.current ||
+      focusLockedRef.current
+    ) {
+      return;
+    }
+
+    submissionInFlightRef.current = true;
+
+    try {
+      const response = await api(
+        `/api/exams/${encodeURIComponent(examId)}/submit`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({}),
+        },
+      );
+
+      if (response?.ok !== true) {
+        throw new Error('Automatic submission failed.');
+      }
 
       intentionalExitRef.current = true;
       examSessionActiveRef.current = false;
-    } catch {}
-    setEnded(true);
-    navigation.reset({ index: 0, routes: [{ name: 'Dashboard' }] });
+
+      setEnded(true);
+
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Dashboard' }],
+      });
+    } catch (error) {
+      console.log('[EXAM AUTO SUBMIT ERROR]', error);
+
+      showErr(error?.message || 'Could not submit the exam automatically.');
+
+      // Keep the screen open so submission failure is not
+      // incorrectly reported as success.
+    } finally {
+      submissionInFlightRef.current = false;
+    }
   };
 
   if (!examId) {
@@ -1067,8 +1197,29 @@ export default function ExamHall() {
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
         <Text style={styles.title}></Text>
+
         {!!endsAt && <Pill>Ends: {endsAt.toLocaleString()}</Pill>}
       </View>
+
+      {/* Exam screen warning */}
+      {!loading && started && !focusLocked && (!ended || alreadySubmitted) && (
+        <View style={styles.examWarningContainer} accessibilityRole="alert">
+          <MaterialCommunityIcons
+            name="alert-outline"
+            size={22}
+            color="#F87171"
+          />
+
+          <Text style={styles.examWarningText}>
+            <Text style={styles.examWarningBold}>
+              Stay on this exam screen.
+            </Text>{' '}
+            Minimizing the browser or app, changing tabs, or opening another
+            mobile app will immediately submit and lock your test. Only an
+            administrator can unlock it.
+          </Text>
+        </View>
+      )}
 
       {!!toast && (
         <View
@@ -1084,6 +1235,47 @@ export default function ExamHall() {
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator />
+        </View>
+      ) : alreadySubmitted ? (
+        <View style={styles.completedCard}>
+          <View style={styles.completedHeader}>
+            <View style={{ flex: 1, paddingRight: 10 }}>
+              <Text style={styles.completedTitle}>Answer sheet submitted</Text>
+
+              <Text style={styles.completedSubtitle}>
+                This attempt can no longer be edited
+              </Text>
+            </View>
+
+            <Pill>⏱ --</Pill>
+          </View>
+
+          <View style={styles.submittedBody}>
+            <MaterialCommunityIcons name="check" size={46} color="#E2E8F0" />
+
+            <Text style={styles.submittedTitle}>
+              Your answer sheet has been submitted
+            </Text>
+
+            <Text style={styles.submittedDescription}>
+              You cannot re-enter or change this attempt.
+            </Text>
+
+            <TouchableOpacity
+              style={[styles.btn, styles.btnSecondary]}
+              onPress={() => {
+                intentionalExitRef.current = true;
+                examSessionActiveRef.current = false;
+
+                navigation.reset({
+                  index: 0,
+                  routes: [{ name: 'Dashboard' }],
+                });
+              }}
+            >
+              <Text style={styles.btnSecondaryText}>Return to dashboard</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       ) : focusLocked ? (
         <View style={styles.lockCard}>
@@ -1153,26 +1345,42 @@ export default function ExamHall() {
             </Text>
 
             <Text style={styles.completedMessage}>
-              You may exit now, or restart to review your answers.
+              Submit your answer sheet to see the automatic review.
             </Text>
 
             <View style={styles.completedActions}>
               <TouchableOpacity
-                style={[styles.btn, styles.btnSecondary]}
-                onPress={handleExitHall}
-              >
-                <Text style={styles.btnSecondaryText}>Exit Hall</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
                 style={[styles.btn, styles.btnPrimary]}
                 onPress={async () => {
-                  setExamCompleted(false);
-
-                  await fetchQuestionAt(1);
+                  try {
+                    await fetchQuestionAt(1);
+                    setExamCompleted(false);
+                  } catch (error) {
+                    showErr(error?.message || 'Could not restart the exam.');
+                  }
                 }}
               >
                 <Text style={styles.btnText}>Restart Exam</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.btn,
+                  styles.btnPrimary,
+                  submittingExam && styles.btnDisabled,
+                ]}
+                onPress={confirmSubmitAnswerSheet}
+                disabled={submittingExam}
+              >
+                {submittingExam ? (
+                  <View style={styles.row}>
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+
+                    <Text style={styles.btnText}>Submitting...</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.btnText}>Submit answer sheet</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -1367,6 +1575,128 @@ export default function ExamHall() {
           </View>
         </View>
       )}
+      <Modal
+        visible={reviewVisible}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => {}}
+      >
+        <View style={styles.reviewModalOverlay}>
+          <View style={styles.reviewModalCard}>
+            <View style={styles.reviewModalHeader}>
+              <Text style={styles.reviewModalTitle}>Exam complete</Text>
+
+              <Text style={styles.reviewModalSubtitle}>
+                Your answers have been submitted. Review the automatic MCQ
+                scores below.
+              </Text>
+            </View>
+
+            <ScrollView
+              style={styles.reviewModalScroll}
+              contentContainerStyle={styles.reviewModalContent}
+              showsVerticalScrollIndicator={true}
+              nestedScrollEnabled={true}
+              scrollEnabled={true}
+              bounces={false}
+            >
+              {examReview.length === 0 ? (
+                <Text style={styles.reviewEmptyText}>
+                  Your answer sheet was submitted successfully. No automatic
+                  review is available.
+                </Text>
+              ) : (
+                examReview.map((item, itemIndex) => {
+                  const studentChoices = Array.isArray(
+                    item?.student_answer?.choices,
+                  )
+                    ? item.student_answer.choices
+                    : [];
+
+                  const correctChoices = Array.isArray(
+                    item?.correct_answer?.choices,
+                  )
+                    ? item.correct_answer.choices
+                    : [];
+
+                  const studentAnswer = studentChoices.length
+                    ? studentChoices.join(', ')
+                    : 'No answer';
+
+                  const correctAnswer = correctChoices.length
+                    ? correctChoices.join(', ')
+                    : 'Not available';
+
+                  const earned = item?.score?.earned;
+                  const fullMarks = item?.score?.full_marks;
+
+                  return (
+                    <View
+                      key={`review-${item?.index ?? itemIndex}-${itemIndex}`}
+                      style={styles.reviewQuestionCard}
+                    >
+                      <View style={styles.reviewQuestionHeader}>
+                        <Text style={styles.reviewQuestionTitle}>
+                          {item?.index ?? itemIndex + 1}. {item?.question || ''}
+                        </Text>
+                      </View>
+
+                      <View style={styles.reviewQuestionBody}>
+                        <View style={styles.reviewAnswerBox}>
+                          <View style={styles.reviewAnswerTopRow}>
+                            <Text style={styles.reviewAnswerLabel}>
+                              Your answer
+                            </Text>
+
+                            {earned != null && fullMarks != null ? (
+                              <View style={styles.reviewScoreBadge}>
+                                <Text style={styles.reviewScoreText}>
+                                  Score: {earned} / {fullMarks}
+                                </Text>
+                              </View>
+                            ) : null}
+                          </View>
+
+                          <Text style={styles.reviewAnswerText}>
+                            {studentAnswer}
+                          </Text>
+                        </View>
+
+                        <View style={styles.reviewCorrectBox}>
+                          <Text style={styles.reviewAnswerLabel}>
+                            Correct answer(s)
+                          </Text>
+
+                          <Text style={styles.reviewAnswerText}>
+                            {correctAnswer}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </ScrollView>
+
+            <View style={styles.reviewModalFooter}>
+              <TouchableOpacity
+                style={[styles.btn, styles.btnPrimary]}
+                onPress={() => {
+                  setReviewVisible(false);
+
+                  navigation.reset({
+                    index: 0,
+                    routes: [{ name: 'Dashboard' }],
+                  });
+                }}
+              >
+                <Text style={styles.btnText}>OK</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

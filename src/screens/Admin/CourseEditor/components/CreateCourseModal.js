@@ -131,6 +131,8 @@ export default function CreateCourseModal({ visible, onClose, onCreated }) {
   }
 
   async function handleCreateCourse() {
+    if (saving) return;
+
     const cleanTitle = form.title.trim();
     const cleanDescription = form.description.trim();
 
@@ -141,7 +143,11 @@ export default function CreateCourseModal({ visible, onClose, onCreated }) {
       return;
     }
 
-    if (!Number.isFinite(numericPrice) || numericPrice < 0) {
+    if (
+      !form.price.trim() ||
+      !Number.isFinite(numericPrice) ||
+      numericPrice < 0
+    ) {
       setErrorMessage('Please enter a valid course price.');
       return;
     }
@@ -153,31 +159,34 @@ export default function CreateCourseModal({ visible, onClose, onCreated }) {
       const payload = {
         title: cleanTitle,
         price: numericPrice,
-        currency: form.currency,
         description: cleanDescription,
       };
 
-      console.log('Create course payload:', payload);
+      console.log('[CREATE COURSE PAYLOAD]', payload);
 
       const response = await api('/api/ott/ottcourses', {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(payload),
       });
 
+      console.log('[CREATE COURSE RESPONSE]', response);
+
       if (!response?.id) {
-        throw new Error('The server did not return the created course.');
+        throw new Error('Course creation could not be confirmed.');
       }
 
-      onCreated?.({
-        ...response,
-        images: [],
-        chapters: [],
-        categories: [],
-        tags: [],
-        class_groups: [],
-      });
+      // Inform parent screen:
+      // Close modal and refresh course list.
+      onCreated?.(response);
     } catch (error) {
-      console.log('Course create API error:', error);
+      console.log('[CREATE COURSE ERROR]', {
+        message: error?.message,
+        status: error?.status,
+        payload: error?.payload,
+      });
 
       setErrorMessage(error?.message || 'The course could not be created.');
     } finally {
@@ -425,62 +434,7 @@ function BlankCourseStep({ form, saving, isCompactScreen, onChangeField }) {
       </View>
 
       <View style={styles.fieldGroup}>
-        <Text style={styles.fieldLabel}>Currency</Text>
-
-        <View style={styles.currencyGrid}>
-          {CURRENCY_OPTIONS.map(option => {
-            const selected = form.currency === option.code;
-
-            return (
-              <Pressable
-                key={option.code}
-                onPress={() => onChangeField('currency', option.code)}
-                disabled={saving}
-                style={({ pressed }) => [
-                  styles.currencyButton,
-
-                  selected && styles.currencyButtonSelected,
-
-                  pressed && !saving && styles.buttonPressed,
-
-                  saving && styles.buttonDisabled,
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.currencySymbol,
-
-                    selected && styles.currencyTextSelected,
-                  ]}
-                >
-                  {option.symbol}
-                </Text>
-
-                <View style={styles.currencyTextContainer}>
-                  <Text
-                    style={[
-                      styles.currencyCode,
-
-                      selected && styles.currencyTextSelected,
-                    ]}
-                  >
-                    {option.code}
-                  </Text>
-
-                  <Text
-                    style={[
-                      styles.currencyName,
-
-                      selected && styles.currencyNameSelected,
-                    ]}
-                  >
-                    {option.name}
-                  </Text>
-                </View>
-              </Pressable>
-            );
-          })}
-        </View>
+        <Text style={styles.fieldLabel}>Currency INR / ₹</Text>
       </View>
 
       <View style={styles.fieldGroup}>

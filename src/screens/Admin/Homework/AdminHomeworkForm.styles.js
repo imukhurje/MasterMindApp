@@ -434,4 +434,43 @@ export default StyleSheet.create({
     fontWeight: '700',
     marginTop: 5,
   },
+
+  selectedSubjectsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+  },
+
+  selectedSubjectChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    minHeight: 34,
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    borderRadius: 18,
+    backgroundColor: '#142B49',
+    paddingLeft: 11,
+    paddingRight: 6,
+    paddingVertical: 5,
+    gap: 8,
+  },
+
+  selectedSubjectText: {
+    color: '#E2E8F0',
+    fontSize: 11,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+
+  selectedSubjectRemove: {
+    width: 23,
+    height: 23,
+    borderRadius: 8,
+    backgroundColor: '#0B1C32',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

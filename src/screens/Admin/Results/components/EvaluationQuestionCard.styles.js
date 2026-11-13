@@ -20,11 +20,13 @@ export const styles = StyleSheet.create({
   card: {
     backgroundColor: COLORS.CARD,
 
+    borderWidth: 1,
+    borderColor: COLORS.BORDER,
+
     borderRadius: 12,
-
     padding: 12,
-
     width: '100%',
+    marginBottom: 10,
   },
 
   gradingRow: {
@@ -399,5 +401,41 @@ export const styles = StyleSheet.create({
     marginTop: 12,
 
     marginBottom: 5,
+  },
+  cardEvaluated: {
+    backgroundColor: '#0D3B33',
+    borderColor: '#238B72',
+  },
+
+  cardNotEvaluated: {
+    backgroundColor: '#0B1629',
+    borderColor: '#3B7197',
+  },
+  questionNotesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  questionNotesInput: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 48,
+    marginTop: 0,
+  },
+
+  questionNotesSaveButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 9,
+    backgroundColor: '#2563EB',
+    borderWidth: 1,
+    borderColor: '#60A5FA',
+  },
+
+  questionNotesSaveDisabled: {
+    opacity: 0.45,
   },
 });

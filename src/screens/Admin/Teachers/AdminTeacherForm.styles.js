@@ -134,6 +134,8 @@ export default StyleSheet.create({
   footer: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 8,
     marginTop: 18,
   },
@@ -338,5 +340,141 @@ export default StyleSheet.create({
   readOnlyInput: {
     opacity: 0.68,
     backgroundColor: 'rgba(20, 43, 73, 0.45)',
+  },
+
+  documentsSection: {
+    marginTop: 22,
+    paddingTop: 17,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(59,113,151,0.38)',
+    gap: 10,
+  },
+
+  documentsTitle: {
+    color: '#F8FAFC',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+
+  documentsDescription: {
+    color: '#AFC0D8',
+    fontSize: 11,
+    lineHeight: 18,
+  },
+
+  documentsEmptyText: {
+    color: '#94A3B8',
+    fontSize: 11,
+  },
+
+  documentField: {
+    gap: 7,
+    marginTop: 5,
+  },
+
+  documentLabel: {
+    color: '#E2E8F0',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  documentPickerButton: {
+    minHeight: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 11,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    backgroundColor: '#142B49',
+  },
+
+  documentPickerSelected: {
+    borderColor: '#60A5FA',
+  },
+
+  documentChooseText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  documentFileName: {
+    flex: 1,
+    color: '#AFC0D8',
+    fontSize: 11,
+  },
+
+  documentSelectedInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+
+  documentSelectedText: {
+    flex: 1,
+    color: '#86EFAC',
+    fontSize: 10,
+  },
+
+  documentRemoveButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 7,
+    backgroundColor: '#3B1828',
+  },
+
+  documentRemoveText: {
+    color: '#FCA5A5',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  emailHelperText: {
+    color: '#AFC0D8',
+    fontSize: 10,
+    lineHeight: 16,
+    marginTop: 6,
+    marginBottom: 8,
+  },
+
+  draftButton: {
+    minHeight: 42,
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#3B7197',
+    borderRadius: 9,
+    backgroundColor: '#142B49',
+    paddingHorizontal: 10,
+  },
+
+  draftButtonText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  existingDocumentInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginTop: 5,
+    paddingHorizontal: 3,
+  },
+
+  existingDocumentText: {
+    flex: 1,
+    color: '#86EFAC',
+    fontSize: 10,
+    lineHeight: 16,
+  },
+
+  existingDocumentLoadingText: {
+    color: '#AFC0D8',
+    fontSize: 10,
+    marginTop: 5,
   },
 });

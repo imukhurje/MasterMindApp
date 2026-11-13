@@ -2,9 +2,11 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
+  Alert,
   FlatList,
   TouchableOpacity,
   ScrollView,
+  RefreshControl,
   ActivityIndicator,
   Linking,
   Modal,
@@ -15,28 +17,41 @@ import {
   KeyboardAvoidingView,
 } from 'react-native';
 import Pdf from 'react-native-pdf';
-import { api } from '../../api/client';
+import { api, getToken, getBase } from '../../api/client';
 import RNBlobUtil from 'react-native-blob-util';
 import styles, { COLORS } from './BillingDashboard.styles';
 import QRCode from 'react-native-qrcode-svg';
+import AntDesign from 'react-native-vector-icons/AntDesign';
+import Config from 'react-native-config';
+import RazorpayCheckoutWebView from './RazorpayCheckoutWebView';
 
 const { BG, TEXT, MUTED, PRIMARY } = COLORS;
+const PARENT_FOLDER =
+  String(Config.PARENT_FOLDER || 'Sciencegate')
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, '_') || 'Sciencegate';
 
 const BillingDashboard = () => {
   const [capabilities, setCapabilities] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [paymentConfig, setPaymentConfig] = useState(null);
+  const [reconciling, setReconciling] = useState(false);
+  const reconciliationInProgressRef = useRef(false);
   const [bills, setBills] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
+  const [paymentBillIds, setPaymentBillIds] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [pdfUrl, setPdfUrl] = useState(null);
   const [showPdfModal, setShowPdfModal] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [downloadingFile, setDownloadingFile] = useState(null);
   const [activeTab, setActiveTab] = useState('unpaid'); // 'unpaid' or 'paid'
   const [pdfPath, setPdfPath] = useState(null);
   const [invoiceRemoteUrl, setInvoiceRemoteUrl] = useState(null);
   const errorTimerRef = useRef(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentConfig, setPaymentConfig] = useState(null);
   const [paymentRef, setPaymentRef] = useState('');
   const [paymentQr, setPaymentQr] = useState(null);
   const [paymentLoading, setPaymentLoading] = useState(false);
@@ -44,22 +59,126 @@ const BillingDashboard = () => {
   const paymentErrorTimerRef = useRef(null);
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
   const [couponCode, setCouponCode] = useState('');
+  const [razorpayOrder, setRazorpayOrder] = useState(null);
+  const [razorpayVisible, setRazorpayVisible] = useState(false);
+  const [razorpayChecking, setRazorpayChecking] = useState(false);
 
-  const loadData = useCallback(async () => {
+  const razorpayPollRef = useRef(null);
+  const razorpayCheckingRef = useRef(false);
+
+  const loadData = useCallback(async (isRefresh = false) => {
     setError('');
-    setLoading(true);
-    try {
-      const caps = await api('/api/billing/v2/capabilities');
-      const allBills = await api('/api/billing/v2/my-bills');
 
-      setCapabilities(caps);
-      setBills(allBills);
-    } catch (e) {
-      setError('Failed to load billing data');
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+
+    try {
+      // Initial 4 GET API calls
+      const [
+        meResponse,
+        capabilitiesResponse,
+        paymentConfigResponse,
+        billsResponse,
+      ] = await Promise.all([
+        api('/api/me'),
+        api('/api/billing/v2/capabilities'),
+        api('/api/billing/v2/payment-config'),
+        api('/api/billing/v2/my-bills'),
+      ]);
+
+      setCurrentUser(meResponse);
+      setCapabilities(capabilitiesResponse);
+      setPaymentConfig(paymentConfigResponse);
+
+      const billRows = Array.isArray(billsResponse) ? billsResponse : [];
+
+      setBills(billRows);
+
+      // Clear old checkbox selections on refresh
+      setSelectedIds([]);
+
+      console.log('[MY BILLS INITIAL API]', {
+        role: meResponse?.role,
+        canPay: capabilitiesResponse?.can_pay,
+        gateway: paymentConfigResponse?.gateway,
+        totalBills: billRows.length,
+      });
+
+      // Reconcile existing pending gateway orders.
+      const pendingOrderIds = [
+        ...new Set(
+          billRows
+            .filter(
+              bill =>
+                String(bill?.status).toLowerCase() === 'gateway_pending' &&
+                Number.isInteger(Number(bill?.gateway_order_id)) &&
+                Number(bill.gateway_order_id) > 0,
+            )
+            .map(bill => Number(bill.gateway_order_id)),
+        ),
+      ];
+
+      if (pendingOrderIds.length > 0 && !reconciliationInProgressRef.current) {
+        reconciliationInProgressRef.current = true;
+        setReconciling(true);
+
+        try {
+          const results = await Promise.allSettled(
+            pendingOrderIds.map(async orderId => {
+              const response = await api(
+                `/api/billing/v2/gateway-orders/${orderId}/reconcile`,
+                {
+                  method: 'POST',
+                  body: JSON.stringify({}),
+                },
+              );
+
+              console.log('[GATEWAY RECONCILE]', {
+                orderId,
+                response,
+              });
+
+              return { orderId, response };
+            }),
+          );
+
+          results.forEach((result, index) => {
+            if (result.status === 'rejected') {
+              console.log('[GATEWAY RECONCILE ERROR]', {
+                orderId: pendingOrderIds[index],
+                message: result.reason?.message,
+                status: result.reason?.status,
+              });
+            }
+          });
+        } finally {
+          reconciliationInProgressRef.current = false;
+          setReconciling(false);
+        }
+      }
+    } catch (error) {
+      console.log('[BILLING INITIAL LOAD ERROR]', {
+        status: error?.status,
+        message: error?.message,
+      });
+
+      setError(error?.message || 'Unable to load bills. Please try again.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }, []);
+
+  const onRefresh = useCallback(async () => {
+    if (refreshing || loading) {
+      return;
+    }
+
+    await loadData(true);
+  }, [loadData, refreshing, loading]);
 
   useEffect(() => {
     loadData();
@@ -70,6 +189,11 @@ const BillingDashboard = () => {
       if (errorTimerRef.current) {
         clearTimeout(errorTimerRef.current);
       }
+      if (razorpayPollRef.current) {
+        clearTimeout(razorpayPollRef.current);
+      }
+
+      razorpayCheckingRef.current = false;
     };
   }, []);
 
@@ -111,9 +235,34 @@ const BillingDashboard = () => {
     }, 5000);
   };
 
-  const handlePaySelected = async () => {
-    if (selectedIds.length === 0) {
+  const handlePaySelected = async (billIds = selectedIds) => {
+    const ids = [
+      ...new Set(
+        (Array.isArray(billIds) ? billIds : [])
+          .map(Number)
+          .filter(id => Number.isInteger(id) && id > 0),
+      ),
+    ];
+
+    if (paymentLoading || paymentSubmitting) return;
+
+    if (ids.length === 0) {
       showTemporaryError('Select at least one bill.');
+      return;
+    }
+
+    // Only allow payment for currently available unpaid bills.
+    const payableIds = new Set(
+      bills
+        .filter(bill => bill.status !== 'paid' && !bill.payment_ref)
+        .map(bill => Number(bill.id)),
+    );
+
+    if (!ids.every(id => payableIds.has(id))) {
+      Alert.alert(
+        'Payment Unavailable',
+        'One or more selected bills cannot be paid. Refresh the bills and try again.',
+      );
       return;
     }
 
@@ -122,11 +271,27 @@ const BillingDashboard = () => {
       setPaymentLoading(true);
       setPaymentRefError('');
 
-      /*
-       * Step 1:
-       * Verify that manual UPI QR payment is enabled.
-       */
       const configResponse = await api('/api/billing/v2/payment-config');
+
+      if (configResponse?.gateway === 'RAZORPAY') {
+        if (
+          configResponse?.razorpay?.enabled !== true ||
+          configResponse?.razorpay?.configured !== true
+        ) {
+          throw new Error('Razorpay is not configured.');
+        }
+
+        const order = await api('/api/billing/v2/checkout-intent', {
+          method: 'POST',
+          body: JSON.stringify({
+            bill_ids: ids,
+            coupon_code: couponCode.trim(),
+          }),
+        });
+
+        await openRazorpayOrder(order);
+        return;
+      }
 
       const qrEnabled =
         configResponse?.gateway === 'QRCODE_MANUAL' &&
@@ -134,18 +299,17 @@ const BillingDashboard = () => {
         configResponse?.qrcode_manual?.configured === true;
 
       if (!qrEnabled) {
-        showTemporaryError('UPI QR payment is not available right now.');
+        Alert.alert(
+          'Payment Unavailable',
+          'UPI QR payment is not available right now.',
+        );
         return;
       }
 
-      /*
-       * Step 2:
-       * Generate a payment-specific UPI QR.
-       */
       const qrResponse = await api('/api/billing/v2/payment-qr', {
         method: 'POST',
         body: JSON.stringify({
-          bill_ids: selectedIds,
+          bill_ids: ids,
           coupon_code: couponCode.trim(),
         }),
       });
@@ -154,19 +318,96 @@ const BillingDashboard = () => {
         throw new Error('Could not generate the UPI payment QR.');
       }
 
+      // Preserve exactly the IDs used in the QR request.
+      setPaymentBillIds(ids);
+
       setPaymentConfig(configResponse);
       setPaymentQr(qrResponse);
-
       setPaymentRef('');
-
       setShowPaymentModal(true);
-    } catch (e) {
-      console.log('Payment QR error:', e);
+    } catch (error) {
+      console.log('[CONTINUE PAYMENT ERROR]', {
+        billIds: ids,
+        status: error?.status,
+        message: error?.message,
+      });
 
-      showTemporaryError(e?.message || 'Failed to generate payment QR.');
+      Alert.alert(
+        'Payment Failed',
+        error?.message || 'Could not start payment.',
+      );
     } finally {
       setPaymentLoading(false);
     }
+  };
+
+  const handleContinuePayment = async bill => {
+    if (paymentLoading || paymentSubmitting) return;
+
+    const billId = Number(bill?.id);
+
+    if (!Number.isSafeInteger(billId) || billId <= 0) {
+      Alert.alert('Payment', 'Invalid bill ID.');
+      return;
+    }
+
+    if (bill.status === 'paid') {
+      Alert.alert('Payment', 'This bill is already paid.');
+      return;
+    }
+
+    if (bill.payment_ref) {
+      Alert.alert('Payment Pending', 'A payment has already been submitted.');
+      return;
+    }
+
+    if (isRazorpayEnabled) {
+      const gatewayOrderId = Number(bill.gateway_order_id);
+
+      if (
+        bill.status === 'gateway_pending' &&
+        Number.isSafeInteger(gatewayOrderId) &&
+        gatewayOrderId > 0
+      ) {
+        try {
+          setPaymentLoading(true);
+
+          // Same flow as the Web App
+          const status = await checkRazorpayStatus(gatewayOrderId);
+
+          if (status !== 'created') {
+            await loadData(true);
+
+            Alert.alert(
+              'Payment Status',
+              status === 'paid'
+                ? 'Payment has been confirmed.'
+                : ['review', 'refund_review', 'test_retired'].includes(status)
+                ? 'Payment requires review. Contact the school office.'
+                : 'Payment is pending or unavailable. Refresh before retrying.',
+            );
+            return;
+          }
+
+          const order = await api(
+            `/api/billing/v2/gateway-orders/${gatewayOrderId}/resume`,
+          );
+
+          await openRazorpayOrder(order);
+        } catch (error) {
+          Alert.alert(
+            'Payment Failed',
+            error?.message || 'Unable to resume payment.',
+          );
+        } finally {
+          setPaymentLoading(false);
+        }
+
+        return;
+      }
+    }
+
+    handlePaySelected([billId]);
   };
 
   const closePaymentModal = () => {
@@ -177,6 +418,213 @@ const BillingDashboard = () => {
 
     setPaymentRef('');
     setPaymentRefError('');
+    setPaymentBillIds([]);
+  };
+
+  const checkRazorpayStatus = async orderId => {
+    const response = await api(
+      `/api/billing/v2/gateway-orders/${orderId}/reconcile`,
+      {
+        method: 'POST',
+        body: JSON.stringify({}),
+      },
+    );
+
+    return String(response?.status || '').toLowerCase();
+  };
+
+  const stopRazorpayPolling = () => {
+    if (razorpayPollRef.current) {
+      clearTimeout(razorpayPollRef.current);
+      razorpayPollRef.current = null;
+    }
+
+    razorpayCheckingRef.current = false;
+    setRazorpayChecking(false);
+  };
+
+  const closeRazorpayAndRefresh = async () => {
+    const orderId = Number(razorpayOrder?.payment_order_id);
+
+    // Stop any previous polling
+    stopRazorpayPolling();
+
+    // Close checkout immediately
+    setRazorpayVisible(false);
+    setRazorpayOrder(null);
+
+    try {
+      // Check payment status once, even after dismissal
+      if (Number.isSafeInteger(orderId) && orderId > 0) {
+        await checkRazorpayStatus(orderId);
+      }
+    } catch (error) {
+      console.log('[RAZORPAY EXIT RECONCILE ERROR]', error?.message);
+    } finally {
+      // Refresh list without showing the full-page loader
+      try {
+        const response = await api('/api/billing/v2/my-bills');
+
+        if (Array.isArray(response)) {
+          setBills(response);
+        }
+
+        setSelectedIds([]);
+      } catch (error) {
+        console.log('[RAZORPAY EXIT REFRESH ERROR]', error?.message);
+      }
+    }
+  };
+
+  const verifyRazorpayPayment = async orderId => {
+    if (razorpayCheckingRef.current) return;
+
+    const paymentOrderId = Number(orderId);
+
+    if (!Number.isSafeInteger(paymentOrderId) || paymentOrderId <= 0) {
+      Alert.alert('Payment', 'Invalid payment order.');
+      return;
+    }
+
+    razorpayCheckingRef.current = true;
+    setRazorpayChecking(true);
+
+    let attempts = 0;
+
+    const check = async () => {
+      if (!razorpayCheckingRef.current) return;
+
+      attempts += 1;
+
+      try {
+        const status = await checkRazorpayStatus(paymentOrderId);
+
+        console.log('[RAZORPAY VERIFY]', {
+          paymentOrderId,
+          status,
+          attempts,
+        });
+
+        if (status === 'paid') {
+          stopRazorpayPolling();
+
+          setRazorpayVisible(false);
+          setRazorpayOrder(null);
+
+          await loadData(true);
+
+          Alert.alert('Payment Successful', 'Your payment has been confirmed.');
+
+          return;
+        }
+
+        if (['review', 'refund_review', 'test_retired'].includes(status)) {
+          stopRazorpayPolling();
+
+          setRazorpayVisible(false);
+          setRazorpayOrder(null);
+
+          await loadData(true);
+
+          Alert.alert(
+            'Payment Under Review',
+            'Please contact the school office for confirmation.',
+          );
+
+          return;
+        }
+      } catch (error) {
+        console.log('[RAZORPAY VERIFY ERROR]', error?.message);
+      }
+
+      if (!razorpayCheckingRef.current) return;
+
+      if (attempts >= 24) {
+        stopRazorpayPolling();
+
+        await loadData(true);
+
+        Alert.alert(
+          'Payment Pending',
+          'Payment has not yet been confirmed. Refresh your bills before attempting another payment.',
+        );
+
+        return;
+      }
+
+      razorpayPollRef.current = setTimeout(check, 5000);
+    };
+
+    await check();
+  };
+
+  const openRazorpayOrder = async order => {
+    if (
+      order?.ok === false ||
+      order?.gateway !== 'RAZORPAY' ||
+      !order?.order_id ||
+      !order?.key_id ||
+      !Number.isSafeInteger(Number(order?.payment_order_id)) ||
+      Number(order?.payment_order_id) <= 0 ||
+      !Number.isSafeInteger(Number(order?.amount)) ||
+      Number(order?.amount) <= 0 ||
+      order?.currency !== 'INR'
+    ) {
+      throw new Error('Invalid Razorpay checkout details.');
+    }
+
+    setRazorpayOrder(order);
+    setRazorpayVisible(true);
+  };
+
+  const handleRazorpayEvent = async eventType => {
+    console.log('[RAZORPAY WEBVIEW EVENT]', eventType);
+
+    if (eventType === 'payment_callback') {
+      const orderId = Number(razorpayOrder?.payment_order_id);
+
+      if (!Number.isSafeInteger(orderId) || orderId <= 0) {
+        await closeRazorpayAndRefresh();
+        return;
+      }
+
+      setRazorpayVisible(false);
+
+      // Payment callback is not proof of successful payment.
+      // Wait for backend confirmation.
+      await verifyRazorpayPayment(orderId);
+      return;
+    }
+
+    if (eventType === 'dismissed') {
+      console.log('[RAZORPAY USER EXIT]');
+
+      await closeRazorpayAndRefresh();
+      return;
+    }
+
+    if (eventType === 'failed') {
+      await closeRazorpayAndRefresh();
+
+      Alert.alert(
+        'Payment Not Completed',
+        'The payment was not confirmed. Please check your bill status before trying again.',
+      );
+      return;
+    }
+
+    if (eventType === 'load_error') {
+      await closeRazorpayAndRefresh();
+
+      Alert.alert(
+        'Checkout Error',
+        'Unable to load Razorpay Checkout. Please try again.',
+      );
+    }
+  };
+
+  const handleCloseRazorpay = async () => {
+    await closeRazorpayAndRefresh();
   };
 
   const handleOpenUpiApp = async () => {
@@ -225,7 +673,7 @@ const BillingDashboard = () => {
       const response = await api('/api/billing/v2/checkout-intent', {
         method: 'POST',
         body: JSON.stringify({
-          bill_ids: selectedIds,
+          bill_ids: paymentBillIds,
           payment_reference: utr,
         }),
       });
@@ -233,7 +681,9 @@ const BillingDashboard = () => {
       if (response?.ok) {
         setBills(prev =>
           prev.map(b =>
-            selectedIds.includes(b.id) ? { ...b, payment_ref: utr } : b,
+            paymentBillIds.includes(Number(b.id))
+              ? { ...b, payment_ref: utr }
+              : b,
           ),
         );
 
@@ -298,6 +748,279 @@ const BillingDashboard = () => {
       setError('Failed to load invoice: ' + (e.message || 'Unknown error'));
     } finally {
       setPdfLoading(false);
+    }
+  };
+
+  const handleDownloadBillPdf = async bill => {
+    const billId = Number(bill?.id);
+
+    if (!Number.isInteger(billId) || billId <= 0) {
+      Alert.alert('Download Bill', 'Invalid bill ID.');
+      return;
+    }
+
+    if (downloadingFile !== null) {
+      return;
+    }
+
+    let tempPath = null;
+
+    try {
+      setDownloadingFile({
+        billId,
+        type: 'bill',
+      });
+
+      // Step 1: Get signed PDF URL
+      const response = await api(`/api/billing/v2/bills/${billId}/signed-url`, {
+        method: 'POST',
+      });
+
+      if (!response?.url) {
+        throw new Error('Bill PDF URL was not returned.');
+      }
+
+      // Step 2: Download PDF to temporary storage
+      const fileName = `Bill_${billId}.pdf`;
+
+      tempPath =
+        `${RNBlobUtil.fs.dirs.CacheDir}/` + `bill_${billId}_${Date.now()}.pdf`;
+
+      const result = await RNBlobUtil.config({
+        path: tempPath,
+        fileCache: true,
+      }).fetch('GET', response.url, {
+        Accept: 'application/pdf',
+      });
+
+      const status = Number(result.info()?.status);
+
+      if (status < 200 || status >= 300) {
+        throw new Error(`PDF download failed. HTTP ${status}`);
+      }
+
+      // Step 3: Save file
+      if (Platform.OS === 'android') {
+        const savedUri = await RNBlobUtil.MediaCollection.copyToMediaStore(
+          {
+            name: fileName,
+            parentFolder: PARENT_FOLDER,
+            mimeType: 'application/pdf',
+          },
+          'Download',
+          result.path(),
+        );
+
+        console.log('[BILL PDF SAVED]', {
+          savedUri,
+          parentFolder: PARENT_FOLDER,
+        });
+
+        Alert.alert(
+          'Download Complete',
+          `${fileName} saved to Downloads/${PARENT_FOLDER}.`,
+        );
+      } else {
+        const destination = `${RNBlobUtil.fs.dirs.DocumentDir}/${fileName}`;
+
+        await RNBlobUtil.fs.cp(tempPath, destination);
+
+        Alert.alert(
+          'Download Complete',
+          'Bill PDF saved to the app documents folder.',
+        );
+      }
+    } catch (error) {
+      console.log('[BILL PDF DOWNLOAD ERROR]', {
+        billId,
+        message: error?.message,
+        status: error?.status,
+      });
+
+      Alert.alert(
+        'Download Failed',
+        error?.message || 'Unable to download bill PDF.',
+      );
+    } finally {
+      if (tempPath) {
+        try {
+          const exists = await RNBlobUtil.fs.exists(tempPath);
+
+          if (exists) {
+            await RNBlobUtil.fs.unlink(tempPath);
+          }
+        } catch (error) {
+          console.log('[PDF CLEANUP ERROR]', error);
+        }
+      }
+
+      setDownloadingFile(null);
+    }
+  };
+
+  const downloadBillingFile = async ({ endpoint, fileName, mimeType }) => {
+    const token = await getToken();
+
+    const baseUrl = String(getBase() || '').replace(/\/+$/, '');
+    const url = `${baseUrl}${endpoint}`;
+
+    const tempPath = `${RNBlobUtil.fs.dirs.CacheDir}/${Date.now()}_${fileName}`;
+
+    try {
+      console.log('[BILLING FILE DOWNLOAD START]', {
+        endpoint,
+        url,
+        fileName,
+      });
+
+      const response = await RNBlobUtil.config({
+        path: tempPath,
+        fileCache: true,
+      }).fetch('GET', url, {
+        Accept: mimeType,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      });
+
+      const status = Number(response.info()?.status);
+
+      console.log('[BILLING FILE DOWNLOAD STATUS]', status);
+
+      if (status < 200 || status >= 300) {
+        throw new Error(`Download failed. HTTP ${status}`);
+      }
+
+      // Verify the server actually returned the expected file.
+      const contentType = String(
+        response.info()?.headers?.['Content-Type'] ||
+          response.info()?.headers?.['content-type'] ||
+          '',
+      ).toLowerCase();
+
+      if (
+        contentType.includes('application/json') ||
+        contentType.includes('text/html')
+      ) {
+        throw new Error(
+          'Server returned a response instead of the requested file.',
+        );
+      }
+
+      if (Platform.OS === 'android') {
+        const savedUri = await RNBlobUtil.MediaCollection.copyToMediaStore(
+          {
+            name: fileName,
+            parentFolder: PARENT_FOLDER,
+            mimeType,
+          },
+          'Download',
+          response.path(),
+        );
+
+        console.log('[BILLING FILE SAVED]', {
+          savedUri,
+          fileName,
+          parentFolder: PARENT_FOLDER,
+        });
+
+        Alert.alert(
+          'Download Complete',
+          `${fileName} saved to Downloads/${PARENT_FOLDER}.`,
+        );
+      } else {
+        const destination = `${RNBlobUtil.fs.dirs.DocumentDir}/${fileName}`;
+
+        await RNBlobUtil.fs.cp(tempPath, destination);
+
+        Alert.alert('Download Complete', `${fileName} saved to app documents.`);
+      }
+    } finally {
+      try {
+        if (await RNBlobUtil.fs.exists(tempPath)) {
+          await RNBlobUtil.fs.unlink(tempPath);
+        }
+      } catch (error) {
+        console.log('[DOWNLOAD CLEANUP ERROR]', error);
+      }
+    }
+  };
+
+  const handleDownloadReceiptPdf = async bill => {
+    const billId = Number(bill?.id);
+
+    const receiptId = Number(bill?.receipt?.id ?? bill?.receipt_id);
+
+    console.log('[RECEIPT DOWNLOAD CLICK]', {
+      billId,
+      receiptId,
+      receipt: bill?.receipt,
+    });
+
+    if (!Number.isInteger(receiptId) || receiptId <= 0) {
+      Alert.alert(
+        'Receipt Unavailable',
+        'Receipt ID was not found for this bill.',
+      );
+      return;
+    }
+
+    if (downloadingFile !== null) return;
+
+    try {
+      setDownloadingFile({
+        billId,
+        type: 'receipt',
+      });
+
+      await downloadBillingFile({
+        endpoint: `/api/billing/v2/receipts/${receiptId}/download`,
+        fileName: `Receipt_${receiptId}.pdf`,
+        mimeType: 'application/pdf',
+      });
+    } catch (error) {
+      console.log('[RECEIPT DOWNLOAD ERROR]', error);
+
+      Alert.alert(
+        'Download Failed',
+        error?.message || 'Could not download receipt PDF.',
+      );
+    } finally {
+      setDownloadingFile(null);
+    }
+  };
+
+  const handleDownloadWord = async bill => {
+    const billId = Number(bill?.id);
+
+    console.log('[WORD DOWNLOAD CLICK]', { billId });
+
+    if (!Number.isInteger(billId) || billId <= 0) {
+      Alert.alert('Download Word', 'Invalid bill ID.');
+      return;
+    }
+
+    if (downloadingFile !== null) return;
+
+    try {
+      setDownloadingFile({
+        billId,
+        type: 'word',
+      });
+
+      await downloadBillingFile({
+        endpoint: `/api/billing/v2/bills/${billId}/docx`,
+        fileName: `Bill_${billId}.docx`,
+        mimeType:
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      });
+    } catch (error) {
+      console.log('[WORD DOWNLOAD ERROR]', error);
+
+      Alert.alert(
+        'Download Failed',
+        error?.message || 'Could not download Word document.',
+      );
+    } finally {
+      setDownloadingFile(null);
     }
   };
 
@@ -369,9 +1092,24 @@ const BillingDashboard = () => {
     return regex.test(ref);
   };
 
+  const gateway = String(paymentConfig?.gateway || '').toUpperCase();
+
+  const isRazorpayEnabled =
+    gateway === 'RAZORPAY' &&
+    paymentConfig?.razorpay?.enabled === true &&
+    paymentConfig?.razorpay?.configured === true;
+
+  const isManualQrEnabled =
+    gateway === 'QRCODE_MANUAL' &&
+    paymentConfig?.qrcode_manual?.enabled === true &&
+    paymentConfig?.qrcode_manual?.configured === true;
+
   const renderBill = ({ item }) => {
     const selected = selectedIds.includes(item.id);
     const isPaid = item.status === 'paid';
+
+    const isGatewayPending =
+      String(item.status).toLowerCase() === 'gateway_pending';
 
     const hasPaymentRef = !!item.payment_ref;
     const canSelectBill = !isPaid && !hasPaymentRef;
@@ -445,7 +1183,9 @@ const BillingDashboard = () => {
                 isPaid ? styles.statusTextPaid : styles.statusTextUnpaid,
               ]}
             >
-              {item.status.toUpperCase()}
+              {isGatewayPending
+                ? 'GATEWAY PENDING'
+                : String(item.status || '').toUpperCase()}
             </Text>
           </View>
         </View>
@@ -471,13 +1211,136 @@ const BillingDashboard = () => {
           <Text style={styles.totalAmount}>{formatINR(item.amount)}</Text>
         </View>
 
-        <TouchableOpacity
-          style={styles.printBtn}
-          onPress={() => handlePrintInvoice(item)}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.printText}>Print Invoice</Text>
-        </TouchableOpacity>
+        {isPaid ? (
+          <View style={styles.paidDownloadActions}>
+            {/* Download Bill PDF */}
+            <TouchableOpacity
+              style={[
+                styles.paidDownloadButton,
+                styles.billDownloadButton,
+                downloadingFile !== null && styles.downloadDisabled,
+              ]}
+              onPress={() => handleDownloadBillPdf(item)}
+              disabled={downloadingFile !== null}
+              activeOpacity={0.8}
+            >
+              {downloadingFile?.billId === Number(item.id) &&
+              downloadingFile?.type === 'bill' ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={styles.paidDownloadButtonText}>
+                  <AntDesign name="download" color="#fff" size={17} />
+                  {'  '}Download Bill PDF
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            {/* Download Receipt PDF */}
+            <TouchableOpacity
+              style={[
+                styles.paidDownloadButton,
+                downloadingFile !== null && styles.downloadDisabled,
+              ]}
+              onPress={() => handleDownloadReceiptPdf(item)}
+              disabled={downloadingFile !== null}
+              activeOpacity={0.8}
+            >
+              {downloadingFile?.billId === Number(item.id) &&
+              downloadingFile?.type === 'receipt' ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={styles.paidDownloadButtonText}>
+                  <AntDesign name="download" color="#fff" size={17} />
+                  {'  '}Download Receipt PDF
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            {/* Download Word */}
+            <TouchableOpacity
+              style={[
+                styles.paidDownloadButton,
+                downloadingFile !== null && styles.downloadDisabled,
+              ]}
+              onPress={() => handleDownloadWord(item)}
+              disabled={downloadingFile !== null}
+              activeOpacity={0.8}
+            >
+              {downloadingFile?.billId === Number(item.id) &&
+              downloadingFile?.type === 'word' ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={styles.paidDownloadButtonText}>
+                  <AntDesign name="download" color="#fff" size={17} />
+                  {'  '}Download Word
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.unpaidDownloadActions}>
+            {/* Download Bill PDF */}
+            <TouchableOpacity
+              style={[
+                styles.paidDownloadButton,
+                downloadingFile !== null && styles.downloadDisabled,
+              ]}
+              onPress={() => handleDownloadBillPdf(item)}
+              disabled={downloadingFile !== null}
+              activeOpacity={0.8}
+            >
+              {downloadingFile?.billId === Number(item.id) &&
+              downloadingFile?.type === 'bill' ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={styles.paidDownloadButtonText}>
+                  Download Bill PDF
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            {/* Continue Payment */}
+            <TouchableOpacity
+              style={[
+                styles.paidDownloadButton,
+                styles.continuePaymentButton,
+                (paymentLoading || paymentSubmitting || !!item.payment_ref) &&
+                  styles.downloadDisabled,
+              ]}
+              onPress={() => handleContinuePayment(item)}
+              disabled={
+                paymentLoading || paymentSubmitting || !!item.payment_ref
+              }
+              activeOpacity={0.8}
+            >
+              {paymentLoading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={styles.paidDownloadButtonText}>
+                  Continue Payment
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            {/* Download Word */}
+            <TouchableOpacity
+              style={[
+                styles.paidDownloadButton,
+                downloadingFile !== null && styles.downloadDisabled,
+              ]}
+              onPress={() => handleDownloadWord(item)}
+              disabled={downloadingFile !== null}
+              activeOpacity={0.8}
+            >
+              {downloadingFile?.billId === Number(item.id) &&
+              downloadingFile?.type === 'word' ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={styles.paidDownloadButtonText}>Download Word</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
       </TouchableOpacity>
     );
   };
@@ -586,14 +1449,20 @@ const BillingDashboard = () => {
             {capabilities?.can_pay && (
               <TouchableOpacity
                 style={[styles.payBtn, paymentLoading && styles.payBtnDisabled]}
-                onPress={handlePaySelected}
+                onPress={() => handlePaySelected()}
                 disabled={paymentLoading}
                 activeOpacity={0.85}
               >
                 {paymentLoading ? (
                   <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
-                  <Text style={styles.payText}>Pay by UPI QR</Text>
+                  <Text style={styles.payText}>
+                    {isRazorpayEnabled
+                      ? 'Pay with Razorpay'
+                      : isManualQrEnabled
+                      ? 'Pay by UPI QR'
+                      : 'Payment Unavailable'}
+                  </Text>
                 )}
               </TouchableOpacity>
             )}
@@ -601,21 +1470,48 @@ const BillingDashboard = () => {
         </View>
       )}
 
-      {filteredBills.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>
-            {activeTab === 'paid' ? 'No paid bills' : 'No unpaid bills'}
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          data={filteredBills}
-          keyExtractor={item => item.id.toString()}
-          renderItem={renderBill}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-        />
-      )}
+      <FlatList
+        style={{ flex: 1 }}
+        data={filteredBills}
+        keyExtractor={item => String(item.id)}
+        renderItem={renderBill}
+        contentContainerStyle={[
+          styles.listContent,
+          filteredBills.length === 0 && {
+            flexGrow: 1,
+            justifyContent: 'center',
+          },
+        ]}
+        showsVerticalScrollIndicator={false}
+        alwaysBounceVertical={true}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#ffffff']}
+            tintColor="#2563EB"
+            progressBackgroundColor="#142B49"
+          />
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyText}>
+              {activeTab === 'paid' ? 'No paid bills' : 'No unpaid bills'}
+            </Text>
+
+            <Text
+              style={{
+                color: '#94A3B8',
+                fontSize: 12,
+                marginTop: 8,
+                textAlign: 'center',
+              }}
+            >
+              Pull down to refresh
+            </Text>
+          </View>
+        }
+      />
 
       {selectedIds.length > 0 && activeTab === 'unpaid' && (
         <View style={styles.summaryBox}>
@@ -843,6 +1739,37 @@ const BillingDashboard = () => {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+      <RazorpayCheckoutWebView
+        visible={razorpayVisible}
+        order={razorpayOrder}
+        onEvent={handleRazorpayEvent}
+        onClose={handleCloseRazorpay}
+      />
+
+      {razorpayChecking && (
+        <View
+          style={{
+            position: 'absolute',
+            bottom: 16,
+            left: 16,
+            right: 16,
+            backgroundColor: '#142B49',
+            borderColor: '#3B7197',
+            borderWidth: 1,
+            borderRadius: 12,
+            padding: 14,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 10,
+          }}
+        >
+          <ActivityIndicator size="small" color="#4F8CFF" />
+
+          <Text style={{ color: '#FFFFFF', flex: 1 }}>
+            Verifying payment with the server...
+          </Text>
+        </View>
+      )}
     </View>
   );
 };

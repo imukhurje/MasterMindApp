@@ -48,6 +48,13 @@ export default function AdminClassworkCreate() {
 
   const [classModalVisible, setClassModalVisible] = useState(false);
 
+  const [subjects, setSubjects] = useState([]);
+  const [selectedSubjectIds, setSelectedSubjectIds] = useState([]);
+
+  const [subjectsLoading, setSubjectsLoading] = useState(false);
+  const [subjectsError, setSubjectsError] = useState(false);
+  const [subjectModalVisible, setSubjectModalVisible] = useState(false);
+
   const [title, setTitle] = useState('');
 
   const [note, setNote] = useState('');
@@ -79,12 +86,94 @@ export default function AdminClassworkCreate() {
     loadClasses();
   }, [loadClasses]);
 
+  useEffect(() => {
+    // Reset subjects whenever the selected class changes.
+    setSubjects([]);
+    setSelectedSubjectIds([]);
+    setSubjectModalVisible(false);
+    setSubjectsError(false);
+
+    if (selectedClassId == null) {
+      setSubjectsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadSubjects = async () => {
+      try {
+        setSubjectsLoading(true);
+
+        const response = await api(
+          `/api/classworks/courses?class_group_id=${encodeURIComponent(
+            selectedClassId,
+          )}`,
+        );
+
+        if (cancelled) return;
+
+        const rows = Array.isArray(response?.courses) ? response.courses : [];
+
+        setSubjects(
+          rows
+            .filter(item => item?.id != null)
+            .map(item => ({
+              id: Number(item.id),
+              label: String(item.label || item.title || ''),
+            })),
+        );
+      } catch (error) {
+        if (cancelled) return;
+
+        console.log('[CLASSWORK SUBJECTS ERROR]', {
+          status: error?.status,
+          message: error?.message,
+        });
+
+        setSubjects([]);
+        setSubjectsError(true);
+      } finally {
+        if (!cancelled) {
+          setSubjectsLoading(false);
+        }
+      }
+    };
+
+    loadSubjects();
+
+    // Ignore outdated responses when switching classes quickly.
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedClassId]);
+
   const selectedClass = useMemo(() => {
     return classes.find(item => Number(item?.id) === Number(selectedClassId));
   }, [classes, selectedClassId]);
 
+  const toggleSubject = useCallback(subjectId => {
+    const id = Number(subjectId);
+
+    setSelectedSubjectIds(previous => {
+      if (previous.includes(id)) {
+        return previous.filter(value => value !== id);
+      }
+
+      return [...previous, id];
+    });
+  }, []);
+
+  const selectedSubjects = useMemo(
+    () => subjects.filter(item => selectedSubjectIds.includes(Number(item.id))),
+    [subjects, selectedSubjectIds],
+  );
+
   const canCreate =
-    title.trim().length > 0 && selectedClassId !== null && !saving;
+    title.trim().length > 0 &&
+    selectedClassId !== null &&
+    selectedSubjectIds.length > 0 &&
+    !subjectsLoading &&
+    !saving;
 
   const handleCreate = useCallback(async () => {
     const trimmedTitle = title.trim();
@@ -100,6 +189,11 @@ export default function AdminClassworkCreate() {
       return;
     }
 
+    if (selectedSubjectIds.length === 0) {
+      Alert.alert('Create Classwork', 'Please select at least one subject.');
+      return;
+    }
+
     if (saving) {
       return;
     }
@@ -111,6 +205,7 @@ export default function AdminClassworkCreate() {
         title: trimmedTitle,
         body: trimmedNote || null,
         class_group_id: Number(selectedClassId),
+        course_ids: selectedSubjectIds,
       };
 
       console.log('Create classwork payload:', payload);
@@ -252,6 +347,79 @@ export default function AdminClassworkCreate() {
               color="#B8C7D9"
             />
           </Pressable>
+        </View>
+
+        {/* Subjects - Multi Select */}
+        <View style={styles.field}>
+          <Text style={styles.fieldLabel}>
+            Subjects
+            <Text style={styles.requiredMark}> *</Text>
+          </Text>
+
+          <Pressable
+            disabled={selectedClassId == null || subjectsLoading || saving}
+            onPress={() => setSubjectModalVisible(true)}
+            style={({ pressed }) => [
+              styles.selectBox,
+              (selectedClassId == null || subjectsLoading || saving) &&
+                styles.buttonDisabled,
+              pressed && styles.controlPressed,
+            ]}
+          >
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.selectText,
+                selectedSubjectIds.length === 0 && styles.selectPlaceholder,
+              ]}
+            >
+              {selectedClassId == null
+                ? 'Select class first'
+                : subjectsLoading
+                ? 'Loading subjects...'
+                : selectedSubjectIds.length > 0
+                ? `${selectedSubjectIds.length} subjects selected`
+                : 'Select subjects'}
+            </Text>
+
+            {subjectsLoading ? (
+              <ActivityIndicator size="small" color="#67D1F0" />
+            ) : (
+              <MaterialCommunityIcons
+                name="chevron-down"
+                size={22}
+                color="#B8C7D9"
+              />
+            )}
+          </Pressable>
+
+          {subjectsError && (
+            <Text style={styles.subjectHint}>
+              Unable to load subjects. Select the class again to retry.
+            </Text>
+          )}
+
+          {/* Selected Subjects */}
+          {selectedSubjects.length > 0 && (
+            <View style={styles.selectedSubjectsRow}>
+              {selectedSubjects.map(item => (
+                <Pressable
+                  key={String(item.id)}
+                  disabled={saving}
+                  onPress={() => toggleSubject(item.id)}
+                  style={styles.selectedSubjectChip}
+                >
+                  <Text style={styles.selectedSubjectText}>{item.label}</Text>
+
+                  <MaterialCommunityIcons
+                    name="close"
+                    size={14}
+                    color="#DCEBFF"
+                  />
+                </Pressable>
+              ))}
+            </View>
+          )}
         </View>
 
         {/* Note */}
@@ -458,6 +626,108 @@ export default function AdminClassworkCreate() {
             </ScrollView>
           </Pressable>
         </Pressable>
+      </Modal>
+
+      {/* Subjects Multi-Select Modal */}
+      <Modal
+        visible={subjectModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSubjectModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitle}>Select Subjects</Text>
+
+                <Text style={styles.modalSubtitle}>
+                  Select one or more subjects.
+                </Text>
+              </View>
+
+              <Pressable
+                onPress={() => setSubjectModalVisible(false)}
+                style={styles.modalCloseButton}
+              >
+                <MaterialCommunityIcons
+                  name="close"
+                  size={20}
+                  color="#FFFFFF"
+                />
+              </Pressable>
+            </View>
+
+            <View style={styles.subjectSelectionHeader}>
+              <Text style={styles.subjectCount}>
+                {selectedSubjectIds.length} selected
+              </Text>
+
+              <Pressable
+                onPress={() => {
+                  if (selectedSubjectIds.length === subjects.length) {
+                    setSelectedSubjectIds([]);
+                  } else {
+                    setSelectedSubjectIds(
+                      subjects.map(item => Number(item.id)),
+                    );
+                  }
+                }}
+              >
+                <Text style={styles.selectAllSubjects}>
+                  {selectedSubjectIds.length === subjects.length &&
+                  subjects.length > 0
+                    ? 'Deselect All'
+                    : 'Select All'}
+                </Text>
+              </Pressable>
+            </View>
+
+            <ScrollView style={styles.classList} showsVerticalScrollIndicator>
+              {subjects.map(item => {
+                const selected = selectedSubjectIds.includes(Number(item.id));
+
+                return (
+                  <Pressable
+                    key={String(item.id)}
+                    onPress={() => toggleSubject(item.id)}
+                    style={[
+                      styles.classOption,
+                      selected && styles.classOptionSelected,
+                    ]}
+                  >
+                    <Text style={styles.subjectOptionText}>{item.label}</Text>
+
+                    <MaterialCommunityIcons
+                      name={
+                        selected ? 'checkbox-marked' : 'checkbox-blank-outline'
+                      }
+                      size={22}
+                      color={selected ? '#60A5FA' : '#8294AA'}
+                    />
+                  </Pressable>
+                );
+              })}
+
+              {subjects.length === 0 && (
+                <View style={styles.emptyClasses}>
+                  <Text style={styles.emptyClassesText}>
+                    No subjects available for this class.
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+
+            <View style={styles.subjectModalFooter}>
+              <Pressable
+                onPress={() => setSubjectModalVisible(false)}
+                style={styles.subjectDoneButton}
+              >
+                <Text style={styles.subjectDoneText}>Done</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
       </Modal>
     </View>
   );
